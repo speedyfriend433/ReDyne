@@ -436,9 +436,10 @@ SOFTWARE.
 
 ## 📸 Screenshots
 
-(pls work)[https://github.com/user-attachments/assets/95814d8a-8a54-49d8-ac94-2a062afd3673]
+<img width="1179" height="2556" alt="image" src="https://github.com/user-attachments/assets/d9d80e82-0a6f-4412-b61b-e066e43df0b4" />
+<img width="1179" height="2556" alt="image" src="https://github.com/user-attachments/assets/693c8c4c-c51b-404e-af6d-621b9101e84e" />
 
-(why is it not working)[https://github.com/user-attachments/assets/f7e7d222-0209-4d9e-b6ef-a02b77b04d1f]
+
 ---
 
 ## 🐛 Known Issues
