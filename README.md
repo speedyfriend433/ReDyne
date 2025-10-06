@@ -436,9 +436,9 @@ SOFTWARE.
 
 ## 📸 Screenshots
 
-(https://github.com/user-attachments/assets/95814d8a-8a54-49d8-ac94-2a062afd3673)
+(pls work)[https://github.com/user-attachments/assets/95814d8a-8a54-49d8-ac94-2a062afd3673]
 
-(https://github.com/user-attachments/assets/f7e7d222-0209-4d9e-b6ef-a02b77b04d1f)
+(why is it not working)[https://github.com/user-attachments/assets/f7e7d222-0209-4d9e-b6ef-a02b77b04d1f]
 ---
 
 ## 🐛 Known Issues
