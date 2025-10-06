@@ -436,7 +436,7 @@ SOFTWARE.
 
 ## 📸 Screenshots
 
-*Coming soon - Add screenshots of your app in action!*
+https://github.com/user-attachments/assets/95814d8a-8a54-49d8-ac94-2a062afd3673
 
 ---
 
