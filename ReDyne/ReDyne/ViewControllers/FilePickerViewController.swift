@@ -104,7 +104,15 @@ import UniformTypeIdentifiers
     // MARK: - Actions
     
     @objc private func selectFile() {
-        let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [.data, .item])
+
+        let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [
+            .data,
+            .item,
+            .executable,
+            .unixExecutable,
+            UTType(filenameExtension: "dylib") ?? .data,
+            UTType(filenameExtension: "framework") ?? .data
+        ])
         documentPicker.delegate = self
         documentPicker.allowsMultipleSelection = false
         documentPicker.shouldShowFileExtensions = true
@@ -149,7 +157,7 @@ import UniformTypeIdentifiers
     
     // MARK: - File Processing
     
-    private func processFile(at url: URL) {
+    private func processFile(at url: URL, addToRecent: Bool = true) {
         guard FileManager.default.fileExists(atPath: url.path) else {
             ErrorHandler.showError(ReDyneError.invalidFile, in: self)
             return
@@ -165,8 +173,10 @@ import UniformTypeIdentifiers
             ErrorHandler.log(error)
         }
         
-        UserDefaults.standard.addRecentFile(url.path)
-        loadRecentFiles()
+        if addToRecent {
+            UserDefaults.standard.addRecentFile(url.path)
+            loadRecentFiles()
+        }
         
         let decompileVC = DecompileViewController(fileURL: url)
         navigationController?.pushViewController(decompileVC, animated: true)
@@ -236,8 +246,6 @@ extension FilePickerViewController: UITableViewDelegate {
                     return
                 }
                 
-                defer { url.stopAccessingSecurityScopedResource() }
-                
                 if isStale {
                     if let newBookmarkData = try? url.bookmarkData(
                         options: .minimalBookmark,
@@ -248,7 +256,8 @@ extension FilePickerViewController: UITableViewDelegate {
                     }
                 }
                 
-                processFile(at: url)
+                processFile(at: url, addToRecent: false)
+                
                 return
             } catch {
                 ErrorHandler.log(error)
@@ -257,7 +266,7 @@ extension FilePickerViewController: UITableViewDelegate {
         
         let url = URL(fileURLWithPath: path)
         if FileManager.default.fileExists(atPath: path) {
-            processFile(at: url)
+            processFile(at: url, addToRecent: false)
         } else {
             showFileNotFoundAlert(at: indexPath)
         }
@@ -312,8 +321,6 @@ extension FilePickerViewController: UIDocumentPickerDelegate {
             return
         }
         
-        defer { url.stopAccessingSecurityScopedResource() }
-        
         do {
             let bookmarkData = try url.bookmarkData(
                 options: .minimalBookmark,
@@ -326,6 +333,8 @@ extension FilePickerViewController: UIDocumentPickerDelegate {
         }
         
         processFile(at: url)
+        
+        // The file needs to remain accessible for background processing.
     }
     
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
