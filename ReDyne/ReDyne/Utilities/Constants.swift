@@ -69,6 +69,7 @@ enum Constants {
         static let preferredArchitecture = "com.jian.ReDyne.preferredArch"
         static let disassemblyDetailLevel = "com.jian.ReDyne.detailLevel"
         static let syntaxHighlightingEnabled = "com.jian.ReDyne.syntaxHighlight"
+        static let useLegacyFilePicker = "com.jian.ReDyne.useLegacyFilePicker"
     }
     
     // MARK: - Architecture Support
@@ -125,6 +126,17 @@ extension UserDefaults {
     
     func removeFileBookmark(for path: String) {
         removeObject(forKey: bookmarkKey(for: path))
+    }
+    
+    // MARK: - File Picker Preferences
+    
+    var useLegacyFilePicker: Bool {
+        get {
+            return bool(forKey: Constants.UserDefaultsKeys.useLegacyFilePicker)
+        }
+        set {
+            set(newValue, forKey: Constants.UserDefaultsKeys.useLegacyFilePicker)
+        }
     }
 }
 
