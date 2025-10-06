@@ -50,6 +50,7 @@ import UniformTypeIdentifiers
         
         setupUI()
         setupActions()
+        setupDragAndDrop()
         loadRecentFiles()
         
         navigationItem.rightBarButtonItem = UIBarButtonItem(
@@ -63,6 +64,12 @@ import UniformTypeIdentifiers
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         loadRecentFiles()
+        updateInfoLabel()
+    }
+    
+    private func updateInfoLabel() {
+        let mode = UserDefaults.standard.useLegacyFilePicker ? "Legacy" : "Modern"
+        infoLabel.text = "Select a dylib or Mach-O binary to decompile\n💡 Tip: You can drag & drop files here!\n\n📁 File Picker Mode: \(mode)"
     }
     
     // MARK: - Setup
@@ -96,6 +103,13 @@ import UniformTypeIdentifiers
         selectButton.addTarget(self, action: #selector(selectFile), for: .touchUpInside)
     }
     
+    private func setupDragAndDrop() {
+        let dropInteraction = UIDropInteraction(delegate: self)
+        view.addInteraction(dropInteraction)
+        
+        selectButton.isUserInteractionEnabled = true
+    }
+    
     private func loadRecentFiles() {
         recentFiles = UserDefaults.standard.getRecentFiles()
         tableView.reloadData()
@@ -104,14 +118,15 @@ import UniformTypeIdentifiers
     // MARK: - Actions
     
     @objc private func selectFile() {
-
         let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [
             .data,
             .item,
             .executable,
             .unixExecutable,
             UTType(filenameExtension: "dylib") ?? .data,
-            UTType(filenameExtension: "framework") ?? .data
+            UTType(filenameExtension: "framework") ?? .data,
+            UTType(filenameExtension: "a") ?? .data,
+            UTType(filenameExtension: "o") ?? .data
         ])
         documentPicker.delegate = self
         documentPicker.allowsMultipleSelection = false
@@ -122,6 +137,11 @@ import UniformTypeIdentifiers
     
     @objc private func showSettings() {
         let alert = UIAlertController(title: "Settings", message: nil, preferredStyle: .actionSheet)
+        let currentMode = UserDefaults.standard.useLegacyFilePicker
+        let pickerTitle = currentMode ? "✓ Use Legacy File Picker (Two-Tap)" : "Use Legacy File Picker (Two-Tap)"
+        alert.addAction(UIAlertAction(title: pickerTitle, style: .default) { [weak self] _ in
+            self?.toggleFilePickerStyle()
+        })
         
         alert.addAction(UIAlertAction(title: "Clear Recent Files", style: .destructive) { [weak self] _ in
             self?.clearRecentFiles()
@@ -137,6 +157,24 @@ import UniformTypeIdentifiers
             popover.barButtonItem = navigationItem.rightBarButtonItem
         }
         
+        present(alert, animated: true)
+    }
+    
+    private func toggleFilePickerStyle() {
+        let isLegacy = UserDefaults.standard.useLegacyFilePicker
+        UserDefaults.standard.useLegacyFilePicker = !isLegacy
+        
+        let newMode = !isLegacy ? "Legacy (Two-Tap)" : "Modern (One-Tap)"
+        let message = "File picker changed to \(newMode) mode.\n\nLegacy mode: Direct open (like old iOS apps).\nModern mode: Confirmation dialog before opening."
+        
+        let alert = UIAlertController(
+            title: "File Picker Updated",
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+            self?.updateInfoLabel()
+        })
         present(alert, animated: true)
     }
     
@@ -316,6 +354,36 @@ extension FilePickerViewController: UIDocumentPickerDelegate {
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let url = urls.first else { return }
         
+        if UserDefaults.standard.useLegacyFilePicker {
+            confirmAndProcessFile(at: url)
+        } else {
+            showOpenConfirmation(for: url)
+        }
+    }
+    
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    }
+    
+    private func showOpenConfirmation(for url: URL) {
+        let fileName = url.lastPathComponent
+        let fileSize = getFileSize(at: url)
+        
+        let alert = UIAlertController(
+            title: "Open File?",
+            message: "File: \(fileName)\nSize: \(fileSize)\n\nThis will start analyzing the binary. Continue?",
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "Open", style: .default) { [weak self] _ in
+            self?.confirmAndProcessFile(at: url)
+        })
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        present(alert, animated: true)
+    }
+    
+    private func confirmAndProcessFile(at url: URL) {
         guard url.startAccessingSecurityScopedResource() else {
             ErrorHandler.showError(ReDyneError.fileAccessDenied, in: self)
             return
@@ -333,11 +401,75 @@ extension FilePickerViewController: UIDocumentPickerDelegate {
         }
         
         processFile(at: url)
-        
-        // The file needs to remain accessible for background processing.
     }
     
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    private func getFileSize(at url: URL) -> String {
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            if let size = attributes[.size] as? Int64 {
+                let formatter = ByteCountFormatter()
+                formatter.allowedUnits = [.useKB, .useMB, .useGB]
+                formatter.countStyle = .file
+                return formatter.string(fromByteCount: size)
+            }
+        } catch {
+            return "Unknown"
+        }
+        return "Unknown"
     }
 }
+
+// MARK: - UIDropInteractionDelegate
+
+extension FilePickerViewController: UIDropInteractionDelegate {
+    
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        return session.hasItemsConforming(toTypeIdentifiers: [
+            "public.file-url",
+            "public.url",
+            "public.data"
+        ])
+    }
+    
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        return UIDropProposal(operation: .copy)
+    }
+    
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+        session.loadObjects(ofClass: URL.self) { [weak self] urls in
+            guard let self = self,
+                  let url = urls.first as? URL else { return }
+            
+            DispatchQueue.main.async {
+                if UserDefaults.standard.useLegacyFilePicker {
+                    self.confirmAndProcessFile(at: url)
+                } else {
+                    self.showOpenConfirmation(for: url)
+                }
+            }
+        }
+    }
+    
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnter session: UIDropSession) {
+        UIView.animate(withDuration: 0.2) {
+            self.selectButton.alpha = 0.7
+            self.selectButton.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
+        }
+    }
+    
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
+        UIView.animate(withDuration: 0.2) {
+            self.selectButton.alpha = 1.0
+            self.selectButton.transform = .identity
+        }
+    }
+    
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+        UIView.animate(withDuration: 0.2) {
+            self.selectButton.alpha = 1.0
+            self.selectButton.transform = .identity
+        }
+    }
+}
+
 
