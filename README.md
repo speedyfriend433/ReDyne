@@ -431,6 +431,7 @@ SOFTWARE.
 - [ ] Memory dump analysis
 - [ ] IPA file support
 - [ ] Network analysis
+- [ ] Runtime C Decompiler & Branch
 
 ---
 
