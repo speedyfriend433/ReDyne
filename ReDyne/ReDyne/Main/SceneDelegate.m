@@ -12,7 +12,8 @@
         
         Class filePickerClass = NSClassFromString(@"ReDyne.FilePickerViewController");
         if (filePickerClass) {
-            UIViewController *rootViewController = [[filePickerClass alloc] init];
+            id rootViewController = [[filePickerClass alloc] init];
+            [rootViewController performSelector:@selector(setSceneDelegate:) withObject:self];
             UINavigationController *navigationController = [[UINavigationController alloc] initWithRootViewController:rootViewController];
             UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
             [appearance configureWithDefaultBackground];
