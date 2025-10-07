@@ -422,7 +422,7 @@ SOFTWARE.
 ## 🗺️ Roadmap
 
 **Planned Features:**
-- [ ] Pseudocode generation
+- [x] Pseudocode generation
 - [ ] Type reconstruction
 - [ ] Function renaming
 - [ ] Comment annotations
