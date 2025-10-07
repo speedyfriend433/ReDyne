@@ -143,7 +143,7 @@ class ErrorHandler {
     
     static func log(_ error: Error, function: String = #function, file: String = #file, line: Int = #line) {
         let fileName = (file as NSString).lastPathComponent
-        print("❌ ERROR [\(fileName):\(line) \(function)]: \(error.localizedDescription)")
+        print("ERROR [\(fileName):\(line) \(function)]: \(error.localizedDescription)")
         
         if let localError = error as? ReDyneError, let reason = localError.failureReason {
             print("   Reason: \(reason)")
