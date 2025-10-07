@@ -18,13 +18,10 @@ enum Constants {
         static let defaultFontSize: CGFloat = 12
         static let titleFontSize: CGFloat = 17
         static let largeTitleFontSize: CGFloat = 34
-        
         static let cornerRadius: CGFloat = 8
         static let borderWidth: CGFloat = 1
-        
         static let standardSpacing: CGFloat = 16
         static let compactSpacing: CGFloat = 8
-        
         static let animationDuration: TimeInterval = 0.3
     }
     
@@ -146,10 +143,8 @@ extension UserDefaults {
 extension Constants {
 
     enum FileTypes {
-        // Common binary file extensions for Mach-O analysis
         static let binaryExtensions = ["dylib", "so", "a", "o", "framework", "bundle"]
 
-        // Get UTTypes for binary files with fallbacks
         static func binaryUTTypes() -> [UTType] {
             var types: [UTType] = [
                 .data,
@@ -158,7 +153,6 @@ extension Constants {
                 .unixExecutable
             ]
 
-            // Add specific extension types
             for ext in binaryExtensions {
                 if let type = UTType(filenameExtension: ext) {
                     types.append(type)
@@ -168,29 +162,24 @@ extension Constants {
             return types
         }
 
-        // Get UTType for a specific extension with fallback logic
         static func utType(forExtension ext: String) -> UTType {
             if let type = UTType(filenameExtension: ext) {
                 return type
             }
-            // Try exported types (system-registered types)
             let exportedIdentifier = "public.\(ext)"
             if let exportedType = try? UTType(exportedAs: exportedIdentifier) {
                 return exportedType
             }
-            // Try imported types (third-party registered types)
             if let importedType = try? UTType(importedAs: exportedIdentifier) {
                 return importedType
             }
-            // Final fallback
             return .data
         }
 
-        // Check if a file extension is supported for binary analysis
         static func isSupportedBinaryExtension(_ ext: String) -> Bool {
             let lowerExt = ext.lowercased()
             return binaryExtensions.contains(lowerExt) ||
-                   lowerExt == "" || // Raw binary files
+                   lowerExt == "" ||
                    lowerExt == "out" ||
                    lowerExt == "bin"
         }
@@ -229,7 +218,7 @@ extension Constants {
     static func logFilePickerMode() {
         let mode = UserDefaults.standard.useLegacyFilePicker ? "Legacy (Enhanced)" : "Modern"
         let enhancedActive = EnhancedFilePicker.isActive()
-        print("📁 File Picker Mode: \(mode), Enhanced Active: \(enhancedActive)")
+        print("File Picker Mode: \(mode), Enhanced Active: \(enhancedActive)")
     }
 }
 
