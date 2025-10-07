@@ -12,6 +12,8 @@ enum AnalysisType: String, CaseIterable {
     case signature = "Code Signature"
     case cfg = "Control Flow Graphs"
     case memoryMap = "Memory Map"
+    case pseudocode = "Pseudocode Generation"
+    case binaryPatching = "Binary Patching"
     
     var icon: String {
         switch self {
@@ -22,6 +24,8 @@ enum AnalysisType: String, CaseIterable {
         case .signature: return "checkmark.seal"
         case .cfg: return "point.3.connected.trianglepath.dotted"
         case .memoryMap: return "square.stack.3d.up"
+        case .pseudocode: return "doc.text.magnifyingglass"
+        case .binaryPatching: return "bandage"
         }
     }
     
@@ -34,6 +38,8 @@ enum AnalysisType: String, CaseIterable {
         case .signature: return "Code signing and entitlements"
         case .cfg: return "Visual control flow graphs"
         case .memoryMap: return "Visual segment and section layout"
+        case .pseudocode: return "High-level code reconstruction"
+        case .binaryPatching: return "Apply and manage binary patches"
         }
     }
 }
@@ -42,7 +48,6 @@ class AnalysisMenuViewController: UITableViewController {
 
     weak var delegate: AnalysisMenuDelegate?
 
-    // Analysis availability flags
     private let hasObjCData: Bool
     private let hasCodeSignature: Bool
     private let availableTypes: [AnalysisType]
@@ -51,7 +56,6 @@ class AnalysisMenuViewController: UITableViewController {
         self.hasObjCData = hasObjCData
         self.hasCodeSignature = hasCodeSignature
 
-        // Filter available analysis types based on data availability
         var types = [AnalysisType]()
         for type in AnalysisType.allCases {
             switch type {
@@ -60,7 +64,7 @@ class AnalysisMenuViewController: UITableViewController {
             case .signature:
                 if hasCodeSignature { types.append(type) }
             default:
-                types.append(type) // Always show other types
+                types.append(type)
             }
         }
         self.availableTypes = types
@@ -95,8 +99,10 @@ class AnalysisMenuViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         let type = availableTypes[indexPath.row]
-        delegate?.didSelectAnalysisType(type)
-        dismiss(animated: true)
+        
+        dismiss(animated: true) { [weak self] in
+            self?.delegate?.didSelectAnalysisType(type)
+        }
     }
     
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
