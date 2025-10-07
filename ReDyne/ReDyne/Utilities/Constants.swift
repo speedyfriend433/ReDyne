@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import UniformTypeIdentifiers
 
 enum Constants {
     
@@ -140,21 +141,77 @@ extension UserDefaults {
     }
 }
 
+// MARK: - File Type Utilities
+
+extension Constants {
+
+    enum FileTypes {
+        // Common binary file extensions for Mach-O analysis
+        static let binaryExtensions = ["dylib", "so", "a", "o", "framework", "bundle"]
+
+        // Get UTTypes for binary files with fallbacks
+        static func binaryUTTypes() -> [UTType] {
+            var types: [UTType] = [
+                .data,
+                .item,
+                .executable,
+                .unixExecutable
+            ]
+
+            // Add specific extension types
+            for ext in binaryExtensions {
+                if let type = UTType(filenameExtension: ext) {
+                    types.append(type)
+                }
+            }
+
+            return types
+        }
+
+        // Get UTType for a specific extension with fallback logic
+        static func utType(forExtension ext: String) -> UTType {
+            if let type = UTType(filenameExtension: ext) {
+                return type
+            }
+            // Try exported types (system-registered types)
+            let exportedIdentifier = "public.\(ext)"
+            if let exportedType = try? UTType(exportedAs: exportedIdentifier) {
+                return exportedType
+            }
+            // Try imported types (third-party registered types)
+            if let importedType = try? UTType(importedAs: exportedIdentifier) {
+                return importedType
+            }
+            // Final fallback
+            return .data
+        }
+
+        // Check if a file extension is supported for binary analysis
+        static func isSupportedBinaryExtension(_ ext: String) -> Bool {
+            let lowerExt = ext.lowercased()
+            return binaryExtensions.contains(lowerExt) ||
+                   lowerExt == "" || // Raw binary files
+                   lowerExt == "out" ||
+                   lowerExt == "bin"
+        }
+    }
+}
+
 // MARK: - Formatting Utilities
 
 extension Constants {
-    
+
     static func formatBytes(_ bytes: Int64) -> String {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
     }
-    
+
     static func formatAddress(_ address: UInt64, padding: Int = 16) -> String {
         return String(format: "0x%0\(padding)llX", address)
     }
-    
+
     static func formatDuration(_ interval: TimeInterval) -> String {
         if interval < 1.0 {
             return String(format: "%.0f ms", interval * 1000)
@@ -165,6 +222,14 @@ extension Constants {
             let seconds = Int(interval.truncatingRemainder(dividingBy: 60))
             return "\(minutes)m \(seconds)s"
         }
+    }
+
+    // MARK: - Debug Utilities
+
+    static func logFilePickerMode() {
+        let mode = UserDefaults.standard.useLegacyFilePicker ? "Legacy (Enhanced)" : "Modern"
+        let enhancedActive = EnhancedFilePicker.isActive()
+        print("📁 File Picker Mode: \(mode), Enhanced Active: \(enhancedActive)")
     }
 }
 
