@@ -1,8 +1,14 @@
 import UIKit
 import UniformTypeIdentifiers
+import SwiftUI
+import Combine
 
 @objc class FilePickerViewController: UIViewController {
-    
+
+    // MARK: - SwiftUI File Picker
+    private var sceneDelegateWrapper: SceneDelegateWrapper!
+    private var swiftUIFilePickerViewController: SwiftUIFilePickerViewController!
+
     // MARK: - UI Elements
     
     private let tableView: UITableView = {
@@ -40,19 +46,41 @@ import UniformTypeIdentifiers
     
     private var recentFiles: [String] = []
     
-    // MARK: - Lifecycle
-    
+    // MARK: - Properties for Scene Delegate
+    private var storedSceneDelegate: SceneDelegate?
+
+    @objc func setSceneDelegate(_ sceneDelegate: SceneDelegate) {
+        print("setSceneDelegate called with sceneDelegate: \(sceneDelegate)")
+        storedSceneDelegate = sceneDelegate
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         title = "ReDyne"
         view.backgroundColor = Constants.Colors.primaryBackground
-        
+
+        if let sceneDelegate = storedSceneDelegate {
+            print("Initializing SwiftUI file picker with scene delegate")
+            sceneDelegateWrapper = SceneDelegateWrapper(sceneDelegate: sceneDelegate)
+            swiftUIFilePickerViewController = SwiftUIFilePickerViewController(
+                sceneDelegateWrapper: sceneDelegateWrapper,
+                onFileSelected: { [weak self] url in
+                    print("📁 SwiftUI file selected: \(url)")
+                    self?.handleSwiftUIFileSelection(url)
+                }
+            )
+            print("SwiftUI file picker initialized successfully")
+        } else {
+            print("No scene delegate available for SwiftUI file picker")
+        }
+
         setupUI()
         setupActions()
         setupDragAndDrop()
         loadRecentFiles()
-        
+        configureFilePickerMode()
+
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "gear"),
             style: .plain,
@@ -68,8 +96,20 @@ import UniformTypeIdentifiers
     }
     
     private func updateInfoLabel() {
-        let mode = UserDefaults.standard.useLegacyFilePicker ? "Legacy" : "Modern"
-        infoLabel.text = "Select a dylib or Mach-O binary to decompile\n💡 Tip: You can drag & drop files here!\n\n📁 File Picker Mode: \(mode)"
+        let mode = UserDefaults.standard.useLegacyFilePicker ? "Legacy (Enhanced)" : "Modern"
+        infoLabel.text = "Select a dylib or Mach-O binary to decompile\n💡 Tip: You can drag & drop files here!\n\n File Picker Mode: \(mode)"
+    }
+
+    private func configureFilePickerMode() {
+        if UserDefaults.standard.useLegacyFilePicker {
+            EnhancedFilePicker.enable()
+        } else {
+            EnhancedFilePicker.disable()
+        }
+
+        #if DEBUG
+        Constants.logFilePickerMode()
+        #endif
     }
     
     // MARK: - Setup
@@ -118,20 +158,32 @@ import UniformTypeIdentifiers
     // MARK: - Actions
     
     @objc private func selectFile() {
-        let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [
-            .data,
-            .item,
-            .executable,
-            .unixExecutable,
-            UTType(filenameExtension: "dylib") ?? .data,
-            UTType(filenameExtension: "framework") ?? .data,
-            UTType(filenameExtension: "a") ?? .data,
-            UTType(filenameExtension: "o") ?? .data
-        ])
+        if UserDefaults.standard.useLegacyFilePicker {
+            print("Presenting SwiftUI file picker (Legacy mode)")
+            if swiftUIFilePickerViewController != nil {
+                swiftUIFilePickerViewController.presentFilePicker()
+            } else {
+                print("SwiftUI file picker not initialized")
+                fallbackToUIKitPicker()
+            }
+        } else {
+            print("Presenting UIKit file picker (Modern mode)")
+            let contentTypes = Constants.FileTypes.binaryUTTypes()
+            let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: contentTypes)
+            documentPicker.delegate = self
+            documentPicker.allowsMultipleSelection = false
+            documentPicker.shouldShowFileExtensions = true
+            present(documentPicker, animated: true)
+        }
+    }
+
+    private func fallbackToUIKitPicker() {
+        print("Falling back to UIKit picker")
+        let contentTypes = Constants.FileTypes.binaryUTTypes()
+        let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: contentTypes)
         documentPicker.delegate = self
         documentPicker.allowsMultipleSelection = false
         documentPicker.shouldShowFileExtensions = true
-        
         present(documentPicker, animated: true)
     }
     
@@ -163,10 +215,12 @@ import UniformTypeIdentifiers
     private func toggleFilePickerStyle() {
         let isLegacy = UserDefaults.standard.useLegacyFilePicker
         UserDefaults.standard.useLegacyFilePicker = !isLegacy
-        
-        let newMode = !isLegacy ? "Legacy (Two-Tap)" : "Modern (One-Tap)"
-        let message = "File picker changed to \(newMode) mode.\n\nLegacy mode: Direct open (like old iOS apps).\nModern mode: Confirmation dialog before opening."
-        
+
+        configureFilePickerMode()
+
+        let newMode = !isLegacy ? "Legacy (Enhanced)" : "Modern"
+        let message = "File picker changed to \(newMode) mode.\n\nLegacy mode: Enhanced file access with broader compatibility.\nModern mode: Standard iOS file picker."
+
         let alert = UIAlertController(
             title: "File Picker Updated",
             message: message,
@@ -384,11 +438,32 @@ extension FilePickerViewController: UIDocumentPickerDelegate {
     }
     
     private func confirmAndProcessFile(at url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            ErrorHandler.showError(ReDyneError.invalidFile, in: self)
+            return
+        }
+
+        // Handle different behavior for asCopy modes
+        if UserDefaults.standard.useLegacyFilePicker {
+            let isInAppContainer = url.path.contains("/Containers/Data/Application/") && 
+                                  (url.path.contains("-Inbox/") || url.path.contains("/Documents/"))
+            
+            print("🔍 File path: \(url.path)")
+            print("🔍 Is in app container: \(isInAppContainer)")
+
+            if isInAppContainer {
+                print("File in app container, processing directly")
+                processFile(at: url)
+                return
+            }
+        }
+
+        print("Attempting security-scoped resource access")
         guard url.startAccessingSecurityScopedResource() else {
             ErrorHandler.showError(ReDyneError.fileAccessDenied, in: self)
             return
         }
-        
+
         do {
             let bookmarkData = try url.bookmarkData(
                 options: .minimalBookmark,
@@ -399,7 +474,7 @@ extension FilePickerViewController: UIDocumentPickerDelegate {
         } catch {
             ErrorHandler.log(error)
         }
-        
+
         processFile(at: url)
     }
     
@@ -416,6 +491,95 @@ extension FilePickerViewController: UIDocumentPickerDelegate {
             return "Unknown"
         }
         return "Unknown"
+    }
+
+    // MARK: - SwiftUI File Picker Handling
+
+    private func handleSwiftUIFileSelection(_ url: URL) {
+        confirmAndProcessFile(at: url)
+    }
+}
+
+// MARK: - SwiftUI File Picker Controller
+
+class SwiftUIFilePickerViewController {
+    private var sceneDelegateWrapper: SceneDelegateWrapper
+    private var onFileSelected: (URL) -> Void
+
+    init(sceneDelegateWrapper: SceneDelegateWrapper, onFileSelected: @escaping (URL) -> Void) {
+        self.sceneDelegateWrapper = sceneDelegateWrapper
+        self.onFileSelected = onFileSelected
+    }
+
+    func presentFilePicker() {
+        print("SwiftUIFilePickerViewController.presentFilePicker() called")
+        
+        let contentTypes = [UTType.item, UTType.folder]
+        let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: contentTypes, asCopy: true)
+        documentPicker.allowsMultipleSelection = false
+        documentPicker.shouldShowFileExtensions = true
+        
+        let delegate = DocumentPickerDelegate { [weak self] urls in
+            print("Document picker callback with \(urls.count) URLs")
+            guard let self = self, let url = urls.first else {
+                print("No URLs or self is nil")
+                return
+            }
+            self.onFileSelected(url)
+        }
+        documentPicker.delegate = delegate
+        
+        objc_setAssociatedObject(documentPicker, "delegate", delegate, .OBJC_ASSOCIATION_RETAIN)
+        
+        if let rootVC = sceneDelegateWrapper.sceneDelegate?.window.rootViewController {
+            print("Presenting document picker directly")
+            rootVC.present(documentPicker, animated: true)
+        } else {
+            print("No root view controller available")
+        }
+    }
+}
+
+private class DocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
+    private let onPick: ([URL]) -> Void
+    
+    init(onPick: @escaping ([URL]) -> Void) {
+        self.onPick = onPick
+    }
+    
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        onPick(urls)
+    }
+    
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        print("Document picker cancelled")
+    }
+}
+
+// MARK: - SwiftUI File Picker View
+
+struct SwiftUIFilePickerView: View {
+    @ObservedObject var sceneDelegateWrapper: SceneDelegateWrapper
+    @State private var isPresented = false
+
+    var onFileSelected: ([URL]) -> Void
+
+    var body: some View {
+        Color.clear
+            .documentPicker(
+                isPresented: $isPresented,
+                types: [UTType.item, UTType.folder],
+                multiple: false,
+                sceneDelegateWrapper: sceneDelegateWrapper,
+                onPick: onFileSelected
+            )
+            .onAppear {
+                print("SwiftUIFilePickerView appeared, triggering presentation")
+                DispatchQueue.main.async {
+                    print("Setting isPresented = true")
+                    isPresented = true
+                }
+            }
     }
 }
 

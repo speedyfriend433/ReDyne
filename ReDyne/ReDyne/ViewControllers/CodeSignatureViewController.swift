@@ -65,12 +65,16 @@ class CodeSignatureViewController: UIViewController {
         stackView.addArrangedSubview(statusCard)
         
         if info.isSigned {
-            let detailsText = """
+            var detailsText = """
             Type: \(info.signatureType)
             Size: \(info.signatureSizeString)
-            Team ID: \(info.teamID)
-            Bundle ID: \(info.bundleID)
             """
+            if info.teamID != "Not available" {
+                detailsText += "\nTeam ID: \(info.teamID)"
+            }
+            if info.bundleID != "Not available" {
+                detailsText += "\nBundle ID: \(info.bundleID)"
+            }
             let detailsCard = createCard(icon: "🔐", title: "Signature Details", content: detailsText)
             stackView.addArrangedSubview(detailsCard)
             
@@ -78,13 +82,28 @@ class CodeSignatureViewController: UIViewController {
             if let entitlements = info.entitlements, entitlements.hasData {
                 let entCard = createCard(icon: "📜", title: "Entitlements", content: "Found entitlements data")
                 stackView.addArrangedSubview(entCard)
-                
+
                 if let xml = entitlements.rawXML {
                     let xmlView = createTextView(xml)
                     stackView.addArrangedSubview(xmlView)
                 }
+
+                if entitlements.entitlementCount > 0 {
+                    var entDetails = "Parsed entitlements (\(entitlements.entitlementCount)):\n"
+                    for (key, value) in entitlements.parsedEntitlements.prefix(5) {
+                        entDetails += "• \(key): \(value)\n"
+                    }
+                    if entitlements.entitlementCount > 5 {
+                        entDetails += "... and \(entitlements.entitlementCount - 5) more"
+                    }
+                    let entDetailsCard = createCard(icon: "📋", title: "Entitlement Details", content: entDetails)
+                    stackView.addArrangedSubview(entDetailsCard)
+                }
             } else {
-                let noEntCard = createCard(icon: "📜", title: "Entitlements", content: "No entitlements found")
+                let noEntCard = createCard(icon: "📜", title: "Entitlements",
+                                         content: info.hasEntitlements ?
+                                         "Entitlements detected but parsing failed" :
+                                         "No entitlements found")
                 stackView.addArrangedSubview(noEntCard)
             }
         } else {

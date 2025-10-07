@@ -11,6 +11,7 @@ enum AnalysisType: String, CaseIterable {
     case dependencies = "Dependencies"
     case signature = "Code Signature"
     case cfg = "Control Flow Graphs"
+    case memoryMap = "Memory Map"
     
     var icon: String {
         switch self {
@@ -20,6 +21,7 @@ enum AnalysisType: String, CaseIterable {
         case .dependencies: return "link"
         case .signature: return "checkmark.seal"
         case .cfg: return "point.3.connected.trianglepath.dotted"
+        case .memoryMap: return "square.stack.3d.up"
         }
     }
     
@@ -31,14 +33,45 @@ enum AnalysisType: String, CaseIterable {
         case .dependencies: return "Linked libraries with versions"
         case .signature: return "Code signing and entitlements"
         case .cfg: return "Visual control flow graphs"
+        case .memoryMap: return "Visual segment and section layout"
         }
     }
 }
 
 class AnalysisMenuViewController: UITableViewController {
-    
+
     weak var delegate: AnalysisMenuDelegate?
-    
+
+    // Analysis availability flags
+    private let hasObjCData: Bool
+    private let hasCodeSignature: Bool
+    private let availableTypes: [AnalysisType]
+
+    init(hasObjCData: Bool = false, hasCodeSignature: Bool = false) {
+        self.hasObjCData = hasObjCData
+        self.hasCodeSignature = hasCodeSignature
+
+        // Filter available analysis types based on data availability
+        var types = [AnalysisType]()
+        for type in AnalysisType.allCases {
+            switch type {
+            case .objc:
+                if hasObjCData { types.append(type) }
+            case .signature:
+                if hasCodeSignature { types.append(type) }
+            default:
+                types.append(type) // Always show other types
+            }
+        }
+        self.availableTypes = types
+
+        super.init(style: .insetGrouped)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -50,18 +83,18 @@ class AnalysisMenuViewController: UITableViewController {
     // MARK: - Table View
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return AnalysisType.allCases.count
+        return availableTypes.count
     }
-    
+
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath) as! AnalysisMenuCell
-        let type = AnalysisType.allCases[indexPath.row]
+        let type = availableTypes[indexPath.row]
         cell.configure(with: type)
         return cell
     }
-    
+
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let type = AnalysisType.allCases[indexPath.row]
+        let type = availableTypes[indexPath.row]
         delegate?.didSelectAnalysisType(type)
         dismiss(animated: true)
     }

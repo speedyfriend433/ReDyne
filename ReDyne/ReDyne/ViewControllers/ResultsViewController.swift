@@ -81,6 +81,18 @@ class ResultsViewController: UIViewController {
         return CFGViewController(cfgAnalysis: cfgAnalysis)
     }()
     
+    private lazy var memoryMapViewController: MemoryMapViewController = {
+        let segments = output.segments as NSArray as! [SegmentModel]
+        let sections = output.sections as NSArray as! [SectionModel]
+        let baseAddress = segments.map { $0.vmAddress }.min() ?? 0
+        return MemoryMapViewController(
+            segments: segments,
+            sections: sections,
+            fileSize: output.fileSize,
+            baseAddress: baseAddress
+        )
+    }()
+    
     // MARK: - Properties
     
     private let output: DecompiledOutput
@@ -162,7 +174,11 @@ class ResultsViewController: UIViewController {
     }
     
     @objc private func showMoreOptions() {
-        let menuVC = AnalysisMenuViewController(style: .insetGrouped)
+        let objcResult = output.objcAnalysis as? ObjCAnalysisResult
+        let hasObjCData = objcResult != nil && objcResult!.totalClasses > 0
+        let hasCodeSignature = output.codeSigningAnalysis != nil
+
+        let menuVC = AnalysisMenuViewController(hasObjCData: hasObjCData, hasCodeSignature: hasCodeSignature)
         menuVC.delegate = self
         let navController = UINavigationController(rootViewController: menuVC)
         present(navController, animated: true)
@@ -393,6 +409,8 @@ extension ResultsViewController: AnalysisMenuDelegate {
             } else {
                 showNoDataAvailable(type: "CFG")
             }
+        case .memoryMap:
+            navigationController?.pushViewController(memoryMapViewController, animated: true)
         }
     }
 }
