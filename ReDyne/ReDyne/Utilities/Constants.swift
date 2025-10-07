@@ -130,6 +130,9 @@ extension UserDefaults {
     
     var useLegacyFilePicker: Bool {
         get {
+            if object(forKey: Constants.UserDefaultsKeys.useLegacyFilePicker) == nil {
+                return true
+            }
             return bool(forKey: Constants.UserDefaultsKeys.useLegacyFilePicker)
         }
         set {
