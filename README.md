@@ -423,10 +423,10 @@ SOFTWARE.
 
 **Planned Features:**
 - [x] Pseudocode generation
+- [x] Function renaming
+- [x] Binary patching
 - [ ] Type reconstruction
-- [ ] Function renaming
 - [ ] Comment annotations
-- [ ] Binary patching
 - [ ] Hex editor
 - [ ] Memory dump analysis
 - [ ] IPA file support
