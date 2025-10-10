@@ -425,11 +425,12 @@ SOFTWARE.
 - [x] Pseudocode generation
 - [x] Function renaming
 - [x] Binary patching
-- [ ] Type reconstruction
+- [ ] Class Dump (10% done)
+- [ ] Type reconstruction (50% done)
 - [ ] Comment annotations
 - [ ] Hex editor
 - [ ] Memory dump analysis
-- [ ] IPA file support
+- [ ] Universal Format support
 - [ ] Network analysis
 - [ ] Runtime C Decompiler & Branch
 
