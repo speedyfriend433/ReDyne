@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXContainerItemProxy section */
@@ -30,7 +30,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		E1923D4D2E935DE00083A72D /* Exceptions for "ReDyne" folder in "ReDyne" target */ = {
+		E1923D4D2E935DE00083A72D /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -40,24 +40,9 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		E1923CE62E93568A0083A72D /* ReDyne */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				E1923D4D2E935DE00083A72D /* Exceptions for "ReDyne" folder in "ReDyne" target */,
-			);
-			path = ReDyne;
-			sourceTree = "<group>";
-		};
-		E1923CF42E93568A0083A72D /* ReDyneTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ReDyneTests;
-			sourceTree = "<group>";
-		};
-		E1923CFE2E93568A0083A72D /* ReDyneUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ReDyneUITests;
-			sourceTree = "<group>";
-		};
+		E1923CE62E93568A0083A72D /* ReDyne */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (E1923D4D2E935DE00083A72D /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ReDyne; sourceTree = "<group>"; };
+		E1923CF42E93568A0083A72D /* ReDyneTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ReDyneTests; sourceTree = "<group>"; };
+		E1923CFE2E93568A0083A72D /* ReDyneUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ReDyneUITests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -200,6 +185,7 @@
 				};
 			};
 			buildConfigurationList = E1923CDF2E93568A0083A72D /* Build configuration list for PBXProject "ReDyne" */;
+			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -208,7 +194,6 @@
 			);
 			mainGroup = E1923CDB2E93568A0083A72D;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			productRefGroup = E1923CE52E93568A0083A72D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
