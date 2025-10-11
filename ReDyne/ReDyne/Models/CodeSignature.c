@@ -97,31 +97,63 @@ CodeSignatureInfo* codesign_parse_signature(MachOContext *ctx) {
     uint32_t blob_count = *(uint32_t*)(sig_data + 8);
     
     if (super_magic == 0xc00cfade) {
-    } else if (super_magic == 0xfade0cc0) { 
+    } else if (super_magic == 0xfade0cc0) {
         super_length = __builtin_bswap32(super_length);
         blob_count = __builtin_bswap32(blob_count);
     } else {
-        free(sig_data);
-        printf("   Invalid SuperBlob magic: 0x%08x\n", super_magic);
-        return info;
+        if (super_magic == 0xc00cdefa) {
+            printf("   Found alternative SuperBlob format (0xc00cdefa), attempting to parse...\n");
+            // try reading as big endian (reverse the current logic)
+            super_length = __builtin_bswap32(super_length);
+            blob_count = __builtin_bswap32(blob_count);
+            printf("   Trying big-endian interpretation: length=0x%x, count=%u\n", super_length, blob_count);
+        } else {
+            free(sig_data);
+            printf("   Unknown SuperBlob magic: 0x%08x - signature may be in an unsupported format\n", super_magic);
+            info->is_signed = false;
+            return info;
+        }
     }
     
     uint32_t index_offset = 12;
+    printf("   Found %u blobs in signature\n", blob_count);
+
+    if (blob_count > 100 || blob_count == 0) {
+        printf("   Blob count %u seems unreasonable, signature may be corrupted or unsupported format\n", blob_count);
+        if (sig_size > 0x8c) {
+            uint32_t first_blob_offset = *(uint32_t*)(sig_data + 16);
+            if (super_magic == 0xc00cdefa) {
+                first_blob_offset = __builtin_bswap32(first_blob_offset);
+            }
+            if (first_blob_offset < sig_size && first_blob_offset + 0x60 < sig_size) {
+                const char *ident = (const char*)(sig_data + first_blob_offset + 0x60);
+                if (ident[0] >= 32 && ident[0] <= 126) { // Looks like a valid string
+                    strncpy(info->bundle_id, ident, sizeof(info->bundle_id) - 1);
+                    printf("   Extracted bundle ID from first blob: '%s'\n", info->bundle_id);
+                }
+            }
+        }
+        goto finish_parsing;
+    }
+
     for (uint32_t i = 0; i < blob_count && i < 50; i++) {
         if (index_offset + 8 > sig_size) break;
-        
+
         uint32_t blob_type = *(uint32_t*)(sig_data + index_offset);
         uint32_t blob_offset = *(uint32_t*)(sig_data + index_offset + 4);
-        
+
         if (super_magic != 0xc00cfade) {
             blob_type = __builtin_bswap32(blob_type);
             blob_offset = __builtin_bswap32(blob_offset);
         }
-        
+
         index_offset += 8;
-        
-        if (blob_offset >= sig_size) continue;
-        
+
+        if (blob_offset >= sig_size) {
+            printf("   Skipping blob %u: offset out of bounds\n", i);
+            continue;
+        }
+
         uint8_t *blob_data = sig_data + blob_offset;
         uint32_t blob_magic = *(uint32_t*)blob_data;
         
@@ -129,30 +161,33 @@ CodeSignatureInfo* codesign_parse_signature(MachOContext *ctx) {
             info->has_entitlements = true;
         }
         
-        if (blob_type == 0 && blob_offset + 20 < sig_size) { 
+        if (blob_type == 0 && blob_offset + 20 < sig_size) {
             uint32_t ident_offset = *(uint32_t*)(blob_data + 20);
             if (super_magic != 0xc00cfade) {
                 ident_offset = __builtin_bswap32(ident_offset);
             }
             if (blob_offset + ident_offset < sig_size) {
                 const char *ident = (const char*)(blob_data + ident_offset);
-                strncpy(info->bundle_id, ident, sizeof(info->bundle_id) - 1);
+                if (strlen(info->bundle_id) == 0) {
+                    strncpy(info->bundle_id, ident, sizeof(info->bundle_id) - 1);
+                }
             }
         }
     }
     
     free(sig_data);
     
+finish_parsing:
     if (strlen(info->team_id) == 0) {
         strncpy(info->team_id, "(not embedded)", sizeof(info->team_id) - 1);
     }
     if (strlen(info->bundle_id) == 0) {
         strncpy(info->bundle_id, "(unknown)", sizeof(info->bundle_id) - 1);
     }
-    
+
     printf("   Signature found (%u bytes, %s)\n", sig_size,
            info->is_adhoc_signed ? "ad-hoc" : "full");
-    
+
     return info;
 }
 
