@@ -425,7 +425,7 @@ SOFTWARE.
 - [x] Pseudocode generation
 - [x] Function renaming
 - [x] Binary patching
-- [ ] Class Dump (10% done)
+- [ ] Class Dump (60% done)
 - [ ] Type reconstruction (50% done)
 - [ ] Comment annotations
 - [ ] Hex editor
