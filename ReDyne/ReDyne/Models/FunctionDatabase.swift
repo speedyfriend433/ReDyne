@@ -271,7 +271,6 @@ class FunctionDatabase {
     
     // MARK: - Statistics
     
-    /// Get statistics for a binary
     func getStatistics(for binaryPath: String) -> (renamedCount: Int, commentCount: Int, tagCount: Int) {
         let hash = computeHash(for: binaryPath)
         guard let db = databases[hash] else { return (0, 0, 0) }

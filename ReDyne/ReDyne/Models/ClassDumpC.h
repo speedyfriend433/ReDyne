@@ -111,6 +111,35 @@ void analyze_strings_for_objc(const char* binaryData, size_t binarySize, class_d
 void add_class_to_result(class_dump_result_t* result, const char* className);
 void add_category_to_result(class_dump_result_t* result, const char* categoryName);
 void add_protocol_to_result(class_dump_result_t* result, const char* protocolName);
+void analyze_class_methods_and_properties(const char* className, class_dump_info_t* classInfo);
+void analyze_classlist_section(const char* binaryData, size_t binarySize, class_dump_result_t* result);
+void analyze_catlist_section(const char* binaryData, size_t binarySize, class_dump_result_t* result);
+void analyze_protolist_section(const char* binaryData, size_t binarySize, class_dump_result_t* result);
+void analyze_method_list_section(const char* binaryData, size_t binarySize, class_dump_result_t* result);
+void analyze_prop_list_section(const char* binaryData, size_t binarySize, class_dump_result_t* result);
+void analyze_ivar_list_section(const char* binaryData, size_t binarySize, class_dump_result_t* result);
+void parse_symtab_command(const char* binaryData, size_t binarySize, uint64_t offset, class_dump_result_t* result);
+void parse_dysymtab_command(const char* binaryData, size_t binarySize, uint64_t offset, class_dump_result_t* result);
+void parse_segment_command(const char* binaryData, size_t binarySize, uint64_t offset, class_dump_result_t* result, bool is64bit);
+void analyze_swift_symbols(const char* binaryData, size_t binarySize, class_dump_result_t* result);
+void analyze_swift5_metadata(const char* binaryData, size_t binarySize, class_dump_result_t* result);
+void analyze_swift_reflection_strings(const char* data, size_t size, class_dump_result_t* result);
+void analyze_swift_type_references(const char* data, size_t size, class_dump_result_t* result);
+int is_valid_property_name(const char* name);
+void extract_properties_from_mangled_name(const char* mangledName, class_dump_result_t* result);
+void analyze_classlist_section_from_segment(const char* binaryData, size_t binarySize, uint64_t sectionOffset, class_dump_result_t* result, bool is64bit);
+void analyze_catlist_section_from_segment(const char* binaryData, size_t binarySize, uint64_t sectionOffset, class_dump_result_t* result, bool is64bit);
+void analyze_protolist_section_from_segment(const char* binaryData, size_t binarySize, uint64_t sectionOffset, class_dump_result_t* result, bool is64bit);
+bool find_section_in_binary(const char* binaryData, size_t binarySize, const char* segname, const char* sectname);
+char* extract_class_name_from_symbol(const char* symbolName);
+char* extract_category_name_from_symbol(const char* symbolName);
+char* extract_protocol_name_from_symbol(const char* symbolName);
+char* generate_property_type(const char* propertyName);
+const char* generate_property_attributes(const char* propertyName);
+char* generate_method_signature(const char* methodName, bool isClassMethod);
+
+// Generate header from parsed results
+void generate_header_from_result(class_dump_result_t* result);
 void class_dump_log_analysis_start(const char* binaryPath);
 void class_dump_log_class_found(const char* className, uint64_t address);
 void class_dump_log_category_found(const char* categoryName, const char* className);
@@ -119,5 +148,8 @@ void class_dump_log_method_found(const char* methodName, const char* className);
 void class_dump_log_property_found(const char* propertyName, const char* className);
 void class_dump_log_header_generated(const char* headerPath, size_t headerSize);
 void class_dump_log_analysis_complete(const class_dump_result_t* result);
+
+// Deferred property addition for Swift classes
+void add_deferred_swift_properties(class_dump_result_t* result);
 
 #endif

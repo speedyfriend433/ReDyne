@@ -647,7 +647,7 @@ ObjCRuntimeInfo* objc_parse_runtime(MachOContext *ctx) {
                 }
                 
                 runtime->category_count = parsed_cat_count;
-                printf("   ✅ Successfully parsed %d categories\n", parsed_cat_count);
+                printf("Successfully parsed %d categories\n", parsed_cat_count);
             }
         }
     }
@@ -655,7 +655,7 @@ ObjCRuntimeInfo* objc_parse_runtime(MachOContext *ctx) {
     runtime->protocol_count = 0;
     runtime->protocols = NULL;
     
-    printf("   ✅ Successfully parsed %d classes\n", parsed_count);
+    printf("Successfully parsed %d classes\n", parsed_count);
     
     return runtime;
 }

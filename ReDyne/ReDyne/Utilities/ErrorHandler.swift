@@ -12,6 +12,7 @@ enum ReDyneError: LocalizedError {
     case unsupportedArchitecture(arch: String)
     case fileAccessDenied
     case outOfMemory
+    case failedToPersistBinary(reason: String)
     
     var errorDescription: String? {
         switch self {
@@ -35,6 +36,8 @@ enum ReDyneError: LocalizedError {
             return "File access denied"
         case .outOfMemory:
             return "Out of memory"
+        case .failedToPersistBinary(let reason):
+            return "Failed to save analyzed binary: \(reason)"
         }
     }
     
@@ -60,6 +63,8 @@ enum ReDyneError: LocalizedError {
             return "Grant file access permissions in Settings."
         case .outOfMemory:
             return "Close other apps to free up memory and try again."
+        case .failedToPersistBinary:
+            return "The binary could not be copied to the saved storage area."
         }
     }
     
@@ -85,6 +90,8 @@ enum ReDyneError: LocalizedError {
             return "Sandbox restrictions prevent file access."
         case .outOfMemory:
             return "Insufficient memory for processing."
+        case .failedToPersistBinary:
+            return "The file system denied the copy operation."
         }
     }
 }

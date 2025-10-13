@@ -10,6 +10,8 @@ enum Constants {
         static let maxFileSize: Int64 = 200 * 1024 * 1024
         static let allowedExtensions = ["dylib", "so", ""]
         static let tempDirectoryName = "ReDyneTempFiles"
+        static let savedBinariesDirectoryName = "SavedBinaries"
+        static let patchSetsDirectoryName = "Patches"
     }
     
     // MARK: - UI Configuration
@@ -99,7 +101,13 @@ extension UserDefaults {
         recent.removeAll { $0 == path }
         recent.insert(path, at: 0)
         if recent.count > maxRecent {
+            let removedFiles = Array(recent.suffix(from: maxRecent))
             recent = Array(recent.prefix(maxRecent))
+            
+            // Clean up bookmarks for removed files
+            for removedPath in removedFiles {
+                removeFileBookmark(for: removedPath)
+            }
         }
         set(recent, forKey: Constants.UserDefaultsKeys.recentFiles)
     }
@@ -170,13 +178,9 @@ extension Constants {
                 return type
             }
             let exportedIdentifier = "public.\(ext)"
-            if let exportedType = try? UTType(exportedAs: exportedIdentifier) {
-                return exportedType
-            }
-            if let importedType = try? UTType(importedAs: exportedIdentifier) {
-                return importedType
-            }
-            return .data
+            let exportedType = UTType(exportedAs: exportedIdentifier)
+            let importedType = UTType(importedAs: exportedIdentifier)
+            return exportedType ?? importedType ?? .data
         }
 
         static func isSupportedBinaryExtension(_ ext: String) -> Bool {
@@ -220,7 +224,7 @@ extension Constants {
 
     static func logFilePickerMode() {
         let mode = UserDefaults.standard.useLegacyFilePicker ? "Legacy (Enhanced)" : "Modern"
-        let enhancedActive = EnhancedFilePicker.isActive()
+        let enhancedActive = false
         print("File Picker Mode: \(mode), Enhanced Active: \(enhancedActive)")
     }
 }

@@ -117,7 +117,6 @@ bool arm64_is_prologue(const DisassembledInstruction *inst) {
         strstr(inst->operands, "#-")) {
         return true;
     }
-    // don't mark all SUB SP instructions as prologues
     return false;
 }
 

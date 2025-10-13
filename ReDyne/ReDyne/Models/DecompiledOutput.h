@@ -41,6 +41,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, assign) uint64_t address;
 @property (nonatomic, assign) uint64_t size;
 @property (nonatomic, assign) uint32_t offset;
+@property (nonatomic, assign) uint32_t flags;
 
 @end
 
@@ -112,7 +113,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - Complete Decompilation Output
 
-@interface DecompiledOutput : NSObject
+@interface DecompiledOutput : NSObject <NSCoding, NSSecureCoding>
 
 @property (nonatomic, strong) MachOHeaderModel *header;
 @property (nonatomic, strong) NSArray<SegmentModel *> *segments;

@@ -133,9 +133,46 @@ public class PseudocodeService {
             return .failure(.parsingFailed("Symbol '\(symbolName)' not found in binary"))
         }
         
-        // Extract function instructions (simplified: get 100 instructions from start)
-        let startIdx = instructions.firstIndex(where: { $0.address == function.address }) ?? 0
-        let endIdx = min(startIdx + 100, instructions.count)
+        guard let startIdx = instructions.firstIndex(where: { $0.address == function.address }) else {
+            return .failure(.parsingFailed("Function address not found in disassembly"))
+        }
+        
+        var endIdx = startIdx + 1
+        var foundReturn = false
+        
+        for i in (startIdx + 1)..<instructions.count {
+            let inst = instructions[i]
+            let mnemonic = inst.mnemonic.lowercased()
+            
+            if mnemonic == "ret" {
+                endIdx = i + 1
+                foundReturn = true
+                break
+            }
+            
+            if mnemonic == "b" && !inst.operands.isEmpty {
+                endIdx = i + 1
+                foundReturn = true
+                break
+            }
+            
+            if i - startIdx > 1000 {
+                endIdx = i
+                break
+            }
+            
+            if i > startIdx + 10 {
+                if mnemonic.hasPrefix("stp") && inst.operands.contains("fp") && inst.operands.contains("lr") {
+                    endIdx = i
+                    break
+                }
+            }
+        }
+        
+        if !foundReturn {
+            endIdx = min(startIdx + 200, instructions.count)
+        }
+        
         let functionInstructions = Array(instructions[startIdx..<endIdx])
         
         var disassembly = ""

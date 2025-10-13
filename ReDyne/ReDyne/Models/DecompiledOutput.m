@@ -100,6 +100,54 @@
     return self;
 }
 
+#pragma mark - NSCoding
+
++ (BOOL)supportsSecureCoding {
+    return YES;
+}
+
+- (void)encodeWithCoder:(NSCoder *)coder {
+    [coder encodeObject:self.header forKey:@"header"];
+    [coder encodeObject:self.fileName forKey:@"fileName"];
+    [coder encodeInt64:self.fileSize forKey:@"fileSize"];
+    [coder encodeObject:self.processingDate forKey:@"processingDate"];
+    [coder encodeDouble:self.processingTime forKey:@"processingTime"];
+    [coder encodeInt32:self.totalInstructions forKey:@"totalInstructions"];
+    [coder encodeInt32:self.totalSymbols forKey:@"totalSymbols"];
+    [coder encodeInt32:self.totalStrings forKey:@"totalStrings"];
+    [coder encodeInt32:self.totalFunctions forKey:@"totalFunctions"];
+    [coder encodeInt32:self.totalObjCClasses forKey:@"totalObjCClasses"];
+    [coder encodeInt32:self.totalXrefs forKey:@"totalXrefs"];
+    [coder encodeInt32:self.definedSymbols forKey:@"definedSymbols"];
+    [coder encodeInt32:self.undefinedSymbols forKey:@"undefinedSymbols"];
+}
+
+- (instancetype)initWithCoder:(NSCoder *)coder {
+    self = [super init];
+    if (self) {
+        _header = [coder decodeObjectOfClass:[MachOHeaderModel class] forKey:@"header"];
+        _fileName = [coder decodeObjectOfClass:[NSString class] forKey:@"fileName"];
+        _fileSize = [coder decodeInt64ForKey:@"fileSize"];
+        _processingDate = [coder decodeObjectOfClass:[NSDate class] forKey:@"processingDate"];
+        _processingTime = [coder decodeDoubleForKey:@"processingTime"];
+        _totalInstructions = [coder decodeInt32ForKey:@"totalInstructions"];
+        _totalSymbols = [coder decodeInt32ForKey:@"totalSymbols"];
+        _totalStrings = [coder decodeInt32ForKey:@"totalStrings"];
+        _totalFunctions = [coder decodeInt32ForKey:@"totalFunctions"];
+        _totalObjCClasses = [coder decodeInt32ForKey:@"totalObjCClasses"];
+        _totalXrefs = [coder decodeInt32ForKey:@"totalXrefs"];
+        _definedSymbols = [coder decodeInt32ForKey:@"definedSymbols"];
+        _undefinedSymbols = [coder decodeInt32ForKey:@"undefinedSymbols"];
+        _segments = @[];
+        _sections = @[];
+        _symbols = @[];
+        _strings = @[];
+        _instructions = @[];
+        _functions = @[];
+    }
+    return self;
+}
+
 #pragma mark - Export Methods
 
 - (NSString *)exportAsText {

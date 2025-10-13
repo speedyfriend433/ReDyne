@@ -115,6 +115,7 @@ struct SymbolStatistics {
     }
 }
 
+
 // MARK: - Instruction Array Extensions
 
 extension Array where Element == InstructionModel {
@@ -158,6 +159,7 @@ extension Array where Element == InstructionModel {
     }
 }
 
+
 // MARK: - Function Array Extensions
 
 extension Array where Element == FunctionModel {
@@ -184,6 +186,7 @@ extension Array where Element == FunctionModel {
         return filter { $0.name.lowercased().contains(lowercased) }
     }
 }
+
 
 // MARK: - String Array Extensions
 
@@ -215,4 +218,5 @@ extension Array where Element == StringModel {
         return first { $0.address == address }
     }
 }
+
 

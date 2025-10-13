@@ -1,0 +1,12 @@
+"Thread 3: signal SIGABRT" from "->  0x10084085c <+8>:  b.lo   0x100840878               ; <+36>" from "libsystem_kernel.dylib`__pthread_kill:
+    0x100840854 <+0>:  mov    x16, #0x148               ; =328
+    0x100840858 <+4>:  svc    #0x80
+->  0x10084085c <+8>:  b.lo   0x100840878               ; <+36>
+    0x100840860 <+12>: stp    x29, x30, [sp, #-0x10]!
+    0x100840864 <+16>: mov    x29, sp
+    0x100840868 <+20>: bl     0x1008394e4               ; cerror_nocancel
+    0x10084086c <+24>: mov    sp, x29
+    0x100840870 <+28>: ldp    x29, x30, [sp], #0x10
+    0x100840874 <+32>: ret
+    0x100840878 <+36>: ret
+"

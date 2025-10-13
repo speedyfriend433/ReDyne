@@ -291,7 +291,6 @@ typedef NS_ENUM(NSInteger, ReDyneBinaryParserError) {
     model.fileOffset = info->fileoff;
     model.fileSize = info->filesize;
     
-    // Format protection string
     NSMutableString *prot = [NSMutableString string];
     if (info->initprot & 0x01) [prot appendString:@"r"];
     if (info->initprot & 0x02) [prot appendString:@"w"];
@@ -309,6 +308,7 @@ typedef NS_ENUM(NSInteger, ReDyneBinaryParserError) {
     model.address = info->addr;
     model.size = info->size;
     model.offset = info->offset;
+    model.flags = info->flags;
     
     return model;
 }

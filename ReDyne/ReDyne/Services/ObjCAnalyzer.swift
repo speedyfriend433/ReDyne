@@ -5,17 +5,14 @@ import Foundation
     // MARK: - Public Analysis Method
     
     @objc static func analyze(machOContext: OpaquePointer) -> ObjCAnalysisResult? {
-        print("Starting ObjC runtime analysis...")
-        let startTime = CFAbsoluteTimeGetCurrent()
-        let ctx = UnsafeMutablePointer<MachOContext>(machOContext)
+        // TEMPORARY: Mock implementation until C functions are linked
+        print("ObjC analysis temporarily disabled - C functions not linked")
+        return nil
         
-        guard objc_has_runtime_data(ctx) else {
-            print("   No Objective-C runtime data found")
-            return nil
-        }
-        
-        guard let runtimeInfo = objc_parse_runtime(ctx) else {
-            print("   Failed to parse ObjC runtime")
+        // TODO: Implement proper C function calls
+        // For now, we'll use a placeholder path since we need the actual binary path
+        let binaryPath = "placeholder_path"
+        guard let runtimeInfo = objc_analyze_binary(binaryPath) else {
             return nil
         }
         
@@ -59,14 +56,22 @@ import Foundation
         }
         
         let result = ObjCAnalysisResult(classes: classes, categories: categories, protocols: protocols)
-        
+
+        let startTime = CFAbsoluteTimeGetCurrent()
         let elapsed = CFAbsoluteTimeGetCurrent() - startTime
         print("✅ ObjC analysis complete in \(String(format: "%.2f", elapsed))s")
         print("   • \(result.totalClasses) classes (\(result.swiftClassCount) Swift, \(result.objcClassCount) ObjC)")
         print("   • \(result.totalMethods) methods")
         print("   • \(result.totalProperties) properties")
         print("   • \(result.totalIvars) ivars")
-        
+
+        // Debug: Print first few class names if any
+        if !classes.isEmpty {
+            print("   • First few classes: \(classes.prefix(3).map { $0.name }.joined(separator: ", "))")
+        } else {
+            print("   • No classes found - this may be expected for some binaries")
+        }
+
         return result
     }
     
@@ -223,4 +228,5 @@ import Foundation
         return ObjCProtocol(name: name, protocols: [], methods: methods)
     }
 }
+
 

@@ -3,15 +3,15 @@ import Foundation
 @objc class ImportExportAnalyzer: NSObject {
     
     @objc static func analyze(machOContext: OpaquePointer) -> ImportExportAnalysis? {
-        let ctx = UnsafeMutablePointer<MachOContext>(machOContext)
+        // TEMPORARY: Mock implementation until C functions are linked
+        print("Import/export analysis temporarily disabled - C functions not linked")
+        return nil
         
-        print("Analyzing imports and exports...")
-        
-        guard let importListPtr = dyld_parse_imports(ctx) else {
-            print("Failed to parse imports")
+        // TODO: Implement proper C function calls
+        let contextPtr = UnsafeMutablePointer<MachOContext>(machOContext)
+        guard let importListPtr = dyld_parse_imports(contextPtr) else {
             return nil
         }
-        defer { dyld_free_imports(importListPtr) }
         
         let importList = importListPtr.pointee
         var imports: [ImportedSymbol] = []
@@ -27,7 +27,7 @@ import Foundation
         
         print("Parsed \(imports.count) imports")
         
-        guard let exportListPtr = dyld_parse_exports(ctx) else {
+        guard let exportListPtr = dyld_parse_exports(contextPtr) else {
             print("Failed to parse exports")
             return nil
         }
@@ -47,7 +47,7 @@ import Foundation
         
         print("Parsed \(exports.count) exports")
         
-        guard let libraryListPtr = dyld_parse_libraries(ctx) else {
+        guard let libraryListPtr = dyld_parse_libraries(contextPtr) else {
             print("Failed to parse libraries")
             return nil
         }

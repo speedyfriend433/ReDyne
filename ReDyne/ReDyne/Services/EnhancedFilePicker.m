@@ -1,7 +1,7 @@
 #import "EnhancedFilePicker.h"
 #import "LCSharedUtils.h"
 #import "UIKitPrivate.h"
-#import "utils.h"
+#import "util.h"
 #import "FoundationPrivate.h"
 
 static BOOL enhancedFilePickerActive = NO;
@@ -41,7 +41,6 @@ static void NSFMGuestHooksInit() {
 
     fixFilePicker = YES;
 
-    /*
     // Hook document picker initialization
     swizzle(UIDocumentPickerViewController.class,
             @selector(initForOpeningContentTypes:asCopy:),
@@ -68,7 +67,6 @@ static void NSFMGuestHooksInit() {
                 @selector(setAllowsMultipleSelection:),
                 @selector(hook_setAllowsMultipleSelection:));
     }
-    */
     // swizzle(DOCConfiguration.class, @selector(setHostIdentifier:), @selector(hook_setHostIdentifier:));
 }
 
