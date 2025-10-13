@@ -14,6 +14,8 @@ enum AnalysisType: String, CaseIterable {
     case memoryMap = "Memory Map"
     case pseudocode = "Pseudocode Generation"
     case binaryPatching = "Binary Patching"
+    case typeReconstruction = "Type Reconstruction"
+    case classDump = "Class Dump"
     
     var icon: String {
         switch self {
@@ -26,6 +28,8 @@ enum AnalysisType: String, CaseIterable {
         case .memoryMap: return "square.stack.3d.up"
         case .pseudocode: return "doc.text.magnifyingglass"
         case .binaryPatching: return "bandage"
+        case .typeReconstruction: return "rectangle.3.offgrid"
+        case .classDump: return "doc.text"
         }
     }
     
@@ -40,6 +44,8 @@ enum AnalysisType: String, CaseIterable {
         case .memoryMap: return "Visual segment and section layout"
         case .pseudocode: return "High-level code reconstruction"
         case .binaryPatching: return "Apply and manage binary patches"
+        case .typeReconstruction: return "Reconstruct types from binary analysis"
+        case .classDump: return "Extract Objective-C headers from binary"
         }
     }
 }

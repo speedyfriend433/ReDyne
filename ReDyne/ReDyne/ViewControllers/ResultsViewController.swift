@@ -2,6 +2,10 @@ import UIKit
 
 class ResultsViewController: UIViewController {
     
+    // MARK: - Static Properties
+    
+    static var currentBinaryPath: String?
+    
     // MARK: - UI Elements
     
     private lazy var segmentedControl: UISegmentedControl = {
@@ -47,7 +51,13 @@ class ResultsViewController: UIViewController {
     }()
     
     private lazy var functionsViewController: FunctionsViewController = {
-        return FunctionsViewController(functions: output.functions)
+        let vc = FunctionsViewController(functions: output.functions)
+        vc.setInstructions(output.instructions)
+        return vc
+    }()
+    
+    private lazy var typesViewController: TypesViewController = {
+        return TypesViewController(output: output)
     }()
     
     private lazy var xrefsViewController: XrefsViewController? = {
@@ -103,6 +113,8 @@ class ResultsViewController: UIViewController {
     init(output: DecompiledOutput) {
         self.output = output
         super.init(nibName: nil, bundle: nil)
+        
+        ResultsViewController.currentBinaryPath = output.filePath
     }
     
     required init?(coder: NSCoder) {
@@ -411,7 +423,294 @@ extension ResultsViewController: AnalysisMenuDelegate {
             }
         case .memoryMap:
             navigationController?.pushViewController(memoryMapViewController, animated: true)
+        case .pseudocode:
+            print("Pseudocode generation selected")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.showPseudocodeSelector()
+            }
+        case .binaryPatching:
+            print("Binary patching selected")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.showBinaryPatchingDashboard()
+            }
+        case .typeReconstruction:
+            print("Type reconstruction selected")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.showTypeReconstruction()
+            }
+        case .classDump:
+            print("Class dump selected")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.showClassDump()
+            }
         }
+    }
+    
+    private func showPseudocodeSelector() {
+        print("showPseudocodeSelector() called")
+        print("Presenting view controller: \(String(describing: presentingViewController))")
+        print("Presented view controller: \(String(describing: presentedViewController))")
+        
+        let alert = UIAlertController(
+            title: "Generate Pseudocode",
+            message: "Select a function to generate pseudocode for:",
+            preferredStyle: .actionSheet
+        )
+        
+        print("Alert controller created")
+        
+        alert.addAction(UIAlertAction(title: "Current Function", style: .default) { [weak self] _ in
+            self?.generatePseudocodeForCurrentFunction()
+        })
+        
+        alert.addAction(UIAlertAction(title: "Select from Functions", style: .default) { [weak self] _ in
+            self?.showFunctionSelector()
+        })
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+        }
+        
+        print("About to present alert")
+        present(alert, animated: true) {
+            print("Alert presented successfully")
+        }
+    }
+    
+    private func generatePseudocodeForCurrentFunction() {
+        print("🔧 Attempting to generate pseudocode for current view")
+        
+        switch segmentedControl.selectedSegmentIndex {
+        case 3:
+            generatePseudocodeFromDisassemblyView()
+        case 4:
+            generatePseudocodeFromFunctionsView()
+        default:
+            
+            let alert = UIAlertController(
+                title: "No Function Selected",
+                message: "Please navigate to the Code or Functions tab first, or use 'Select from Functions' to choose a specific function.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+        }
+    }
+    
+    private func generatePseudocodeFromDisassemblyView() {
+        let instructions = disassemblyViewController.getAllInstructions()
+        
+        if instructions.isEmpty {
+            showNothingToGenerateAlert()
+            return
+        }
+        
+        var disassembly = ""
+        var startAddress: UInt64 = 0
+        
+        for (index, instruction) in instructions.enumerated() {
+            if index == 0 {
+                startAddress = instruction.address
+            }
+            disassembly += String(format: "0x%llx: %@ %@\n", 
+                                instruction.address,
+                                instruction.mnemonic,
+                                instruction.operands)
+        }
+        
+        let pseudocodeVC = PseudocodeViewController(
+            disassembly: disassembly,
+            startAddress: startAddress,
+            functionName: "FUN_\(String(format: "%08llx", startAddress))"
+        )
+        
+        navigationController?.pushViewController(pseudocodeVC, animated: true)
+    }
+    
+    private func generatePseudocodeFromFunctionsView() {
+        let functions = output.functions
+        
+        if functions.isEmpty {
+            showNothingToGenerateAlert()
+            return
+        }
+        
+        if functions.count == 1 {
+            let function = functions[0]
+            let disassembly = generateDisassemblyText(for: function)
+            let pseudocodeVC = PseudocodeViewController(
+                disassembly: disassembly,
+                startAddress: function.startAddress,
+                functionName: function.name
+            )
+            navigationController?.pushViewController(pseudocodeVC, animated: true)
+            return
+        }
+        
+        let alert = UIAlertController(
+            title: "Quick Function Selection",
+            message: "Select a function to generate pseudocode:",
+            preferredStyle: .actionSheet
+        )
+        
+        // Show first 10 functions
+        for function in functions.prefix(10) {
+            alert.addAction(UIAlertAction(title: function.name, style: .default) { [weak self] _ in
+                guard let self = self else { return }
+                let disassembly = self.generateDisassemblyText(for: function)
+                let pseudocodeVC = PseudocodeViewController(
+                    disassembly: disassembly,
+                    startAddress: function.startAddress,
+                    functionName: function.name
+                )
+                self.navigationController?.pushViewController(pseudocodeVC, animated: true)
+            })
+        }
+        
+        if functions.count > 10 {
+            alert.addAction(UIAlertAction(title: "More Functions...", style: .default) { [weak self] _ in
+                self?.showFunctionSelector()
+            })
+        }
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+        }
+        
+        present(alert, animated: true)
+    }
+    
+    private func generateDisassemblyText(for function: FunctionModel) -> String {
+        // Generate placeholder disassembly
+        // In a real implementation, this would fetch actual instructions
+        var text = ""
+        let startAddr = function.startAddress
+        
+        for i in 0..<Int(function.instructionCount) {
+            let addr = startAddr + UInt64(i * 4)
+            text += String(format: "0x%llx: <instruction>\n", addr)
+        }
+        
+        return text.isEmpty ? "No disassembly available" : text
+    }
+    
+    private func showNothingToGenerateAlert() {
+        let alert = UIAlertController(
+            title: "Nothing to Generate",
+            message: "No functions or instructions available. Please load a binary file first.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+    
+    private func showFunctionSelector() {
+        segmentedControl.selectedSegmentIndex = 4
+        segmentChanged()
+        
+        functionsViewController.enablePseudocodeMode()
+        functionsViewController.pseudocodeDelegate = self
+        
+        if functionsViewController.isViewLoaded {
+            functionsViewController.viewDidLoad()
+            functionsViewController.tableView.reloadData()
+        }
+        
+        let alert = UIAlertController(
+            title: "Select Function",
+            message: "Tap on any function in the list to generate its pseudocode.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+    
+    private func showBinaryPatchingDashboard() {
+        let dashboardVC = BinaryPatchDashboardViewController(binaryPath: ResultsViewController.currentBinaryPath)
+        let navController = UINavigationController(rootViewController: dashboardVC)
+        navController.modalPresentationStyle = .fullScreen
+        present(navController, animated: true)
+    }
+    
+    private func showTypeReconstruction() {
+        // Create proper Type Reconstruction with real data
+        let output = self.output
+        
+        // Convert symbols to TypeSymbolInfo format
+        let symbolInfos = output.symbols.map { symbolModel in
+            TypeSymbolInfo(
+                name: symbolModel.name ?? "",
+                address: symbolModel.address,
+                size: symbolModel.size,
+                type: symbolModel.type,
+                scope: symbolModel.scope,
+                isExported: false,
+                isDefined: symbolModel.isDefined,
+                isExternal: symbolModel.isExternal,
+                isFunction: symbolModel.type.contains("function")
+            )
+        }
+        
+        // Convert strings
+        let strings = output.strings.map { $0.content ?? "" }
+        
+        // Convert functions
+        let functions = output.functions.map { functionModel in
+            FunctionInfo(
+                name: functionModel.name,
+                address: functionModel.startAddress,
+                size: UInt64(functionModel.endAddress - functionModel.startAddress),
+                isExported: false
+            )
+        }
+        
+        let analyzer = TypeAnalyzer(
+            binaryPath: output.filePath,
+            architecture: output.header.cpuType,
+            symbolTable: symbolInfos,
+            strings: strings,
+            functions: output.functions,
+            crossReferences: []
+        )
+        
+        let inference = TypeInferenceEngine()
+        
+        // Perform analysis
+        let results = analyzer.analyzeTypes()
+        
+        let typeVC = TypeReconstructionViewController(
+            results: results,
+            typeAnalyzer: analyzer,
+            inferenceEngine: inference
+        )
+        
+        let navController = UINavigationController(rootViewController: typeVC)
+        navController.modalPresentationStyle = UIModalPresentationStyle.fullScreen
+        present(navController, animated: true)
+    }
+}
+
+// MARK: - Function Selection Delegate
+
+extension ResultsViewController: FunctionSelectionDelegate {
+    func didSelectFunctionForPseudocode(_ function: FunctionModel, disassembly: String) {
+        print("🎯 Generating pseudocode for: \(function.name)")
+        print("📝 Start address: 0x\(String(format: "%llx", function.startAddress))")
+        print("📊 Instruction count: \(function.instructionCount)")
+        
+        let pseudocodeVC = PseudocodeViewController(
+            disassembly: disassembly,
+            startAddress: function.startAddress,
+            functionName: function.name
+        )
+        
+        navigationController?.pushViewController(pseudocodeVC, animated: true)
     }
 }
 
@@ -484,7 +783,6 @@ class SymbolsViewController: UITableViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "SymbolCell")
         tableView.rowHeight = 44
     }
     
@@ -502,12 +800,21 @@ class SymbolsViewController: UITableViewController {
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "SymbolCell", for: indexPath)
+        let cell = tableView.dequeueReusableCell(withIdentifier: "SymbolCell") 
+            ?? UITableViewCell(style: .subtitle, reuseIdentifier: "SymbolCell")
         let symbol = filteredSymbols[indexPath.row]
         
-        cell.textLabel?.text = "\(Constants.formatAddress(symbol.address)) \(symbol.name)"
-        cell.textLabel?.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        cell.detailTextLabel?.text = "\(symbol.type) | \(symbol.scope)"
+        if symbol.address == 0 {
+            cell.textLabel?.text = "⚠️ \(symbol.name)"
+            cell.textLabel?.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            cell.detailTextLabel?.text = "\(symbol.type) | \(symbol.scope) | External/Undefined"
+            cell.textLabel?.textColor = .secondaryLabel
+        } else {
+            cell.textLabel?.text = "\(Constants.formatAddress(symbol.address)) \(symbol.name)"
+            cell.textLabel?.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            cell.detailTextLabel?.text = "\(symbol.type) | \(symbol.scope)"
+            cell.textLabel?.textColor = .label
+        }
         
         return cell
     }
@@ -616,6 +923,10 @@ class DisassemblyViewController: UITableViewController {
         tableView.estimatedRowHeight = 30
     }
     
+    func getAllInstructions() -> [InstructionModel] {
+        return instructions
+    }
+    
     func filterInstructions(query: String) {
         if query.isEmpty {
             filteredInstructions = instructions
@@ -640,14 +951,25 @@ class DisassemblyViewController: UITableViewController {
     }
 }
 
+protocol FunctionSelectionDelegate: AnyObject {
+    func didSelectFunctionForPseudocode(_ function: FunctionModel, disassembly: String)
+}
+
 class FunctionsViewController: UITableViewController {
     private var functions: [FunctionModel]
     private var filteredFunctions: [FunctionModel]
+    private var allInstructions: [InstructionModel] = []
+    weak var pseudocodeDelegate: FunctionSelectionDelegate?
+    private var pseudocodeMode: Bool = false
     
     init(functions: [FunctionModel]) {
         self.functions = functions.sortedByAddress()
         self.filteredFunctions = self.functions
         super.init(style: .plain)
+    }
+    
+    func setInstructions(_ instructions: [InstructionModel]) {
+        self.allInstructions = instructions
     }
     
     required init?(coder: NSCoder) {
@@ -657,6 +979,20 @@ class FunctionsViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "FunctionCell")
+        
+        if pseudocodeMode {
+            let banner = UILabel()
+            banner.text = "  Select a function to generate pseudocode"
+            banner.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.1)
+            banner.textColor = .systemBlue
+            banner.font = .systemFont(ofSize: 14, weight: .medium)
+            banner.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 44)
+            tableView.tableHeaderView = banner
+        }
+    }
+    
+    func enablePseudocodeMode() {
+        pseudocodeMode = true
     }
     
     func filterFunctions(query: String) {
@@ -676,7 +1012,12 @@ class FunctionsViewController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "FunctionCell", for: indexPath)
         let function = filteredFunctions[indexPath.row]
         
-        cell.textLabel?.text = function.name
+        let displayName = FunctionDatabase.shared.getName(
+            binaryPath: ResultsViewController.currentBinaryPath ?? "",
+            address: function.startAddress
+        ) ?? function.name
+        
+        cell.textLabel?.text = displayName
         cell.textLabel?.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
         cell.detailTextLabel?.text = "\(Constants.formatAddress(function.startAddress)) - \(function.instructionCount) instructions"
         cell.accessoryType = .disclosureIndicator
@@ -684,12 +1025,109 @@ class FunctionsViewController: UITableViewController {
         return cell
     }
     
+    override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        let function = filteredFunctions[indexPath.row]
+        
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            var actions: [UIMenuElement] = []
+            
+            let renameAction = UIAction(
+                title: "Rename Function",
+                image: UIImage(systemName: "pencil")
+            ) { [weak self] _ in
+                guard let self = self,
+                      let binaryPath = ResultsViewController.currentBinaryPath else { return }
+                
+                self.showRenameDialog(
+                    for: function.startAddress,
+                    binaryPath: binaryPath,
+                    currentName: function.name
+                ) { newName in
+                    if newName != nil {
+                        self.tableView.reloadRows(at: [indexPath], with: .automatic)
+                    }
+                }
+            }
+            actions.append(renameAction)
+            
+            let commentAction = UIAction(
+                title: "Add Comment",
+                image: UIImage(systemName: "text.bubble")
+            ) { [weak self] _ in
+                guard let self = self,
+                      let binaryPath = ResultsViewController.currentBinaryPath else { return }
+                
+                self.showCommentDialog(for: function.startAddress, binaryPath: binaryPath) { _ in
+                    //comment add
+                }
+            }
+            actions.append(commentAction)
+            
+            let copyAction = UIAction(
+                title: "Copy Address",
+                image: UIImage(systemName: "doc.on.doc")
+            ) { _ in
+                UIPasteboard.general.string = "0x\(String(format: "%llX", function.startAddress))"
+            }
+            actions.append(copyAction)
+            
+            return UIMenu(title: function.name, children: actions)
+        }
+    }
+    
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let function = filteredFunctions[indexPath.row]
         
+        if pseudocodeMode, let delegate = pseudocodeDelegate {
+            // Generate simple disassembly text (placeholder for now)
+            let disassembly = generateDisassemblyText(for: function)
+            delegate.didSelectFunctionForPseudocode(function, disassembly: disassembly)
+            pseudocodeMode = false
+            tableView.tableHeaderView = nil
+            return
+        }
+        
         let detailVC = FunctionDetailViewController(function: function)
         navigationController?.pushViewController(detailVC, animated: true)
+    }
+    
+    private func generateDisassemblyText(for function: FunctionModel) -> String {
+        let endAddr = function.startAddress + UInt64(function.instructionCount * 4)
+        
+        let functionInstructions = allInstructions.filter { instruction in
+            instruction.address >= function.startAddress && instruction.address < endAddr
+        }
+        
+        if functionInstructions.isEmpty {
+            print("No instructions found for function \(function.name)")
+            return generatePlaceholderDisassembly(for: function)
+        }
+        
+        var text = ""
+        for instruction in functionInstructions {
+            // Format: 0x100001000: 12345678 mov x0, x1
+            text += String(format: "0x%llx: %@ %@ %@\n",
+                          instruction.address,
+                          instruction.hexBytes,
+                          instruction.mnemonic,
+                          instruction.operands)
+        }
+        
+        print("Generated \(functionInstructions.count) instructions for \(function.name)")
+        return text
+    }
+    
+    private func generatePlaceholderDisassembly(for function: FunctionModel) -> String {
+        var text = ""
+        let startAddr = function.startAddress
+        
+        for i in 0..<Int(function.instructionCount) {
+            let addr = startAddr + UInt64(i * 4)
+            text += String(format: "0x%llx: mov x0, x1\n", addr)
+        }
+        
+        return text
     }
 }
 
@@ -713,7 +1151,12 @@ class FunctionDetailViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        title = function.name
+        let displayName = FunctionDatabase.shared.getName(
+            binaryPath: ResultsViewController.currentBinaryPath ?? "",
+            address: function.startAddress
+        ) ?? function.name
+        
+        title = displayName
         view.backgroundColor = Constants.Colors.primaryBackground
         
         setupUI()
@@ -763,7 +1206,26 @@ class FunctionDetailViewController: UIViewController {
         details += "║          FUNCTION DETAILS             ║\n"
         details += "╚═══════════════════════════════════════╝\n\n"
         
-        details += "Name:          \(function.name)\n"
+        let displayName = FunctionDatabase.shared.getName(
+            binaryPath: ResultsViewController.currentBinaryPath ?? "",
+            address: function.startAddress
+        )
+        
+        if let customName = displayName {
+            details += "Name:          \(customName)\n"
+            details += "Original Name: \(function.name)\n"
+        } else {
+            details += "Name:          \(function.name)\n"
+        }
+        
+
+        if let comment = FunctionDatabase.shared.getComment(
+            binaryPath: ResultsViewController.currentBinaryPath ?? "",
+            address: function.startAddress
+        ) {
+            details += "Comment:       \(comment)\n"
+        }
+        
         details += "Start Address: \(Constants.formatAddress(function.startAddress))\n"
         details += "End Address:   \(Constants.formatAddress(function.endAddress))\n"
         
@@ -792,6 +1254,32 @@ class FunctionDetailViewController: UIViewController {
         }
         
         textView.text = details
+    }
+}
+
+// MARK: - Class Dump Support
+
+extension ResultsViewController {
+    private func showClassDump() {
+        let output = self.output
+        
+        // Present ClassDumpViewController
+        let classDumpVC = ClassDumpViewController(binaryPath: output.filePath)
+        let navController = UINavigationController(rootViewController: classDumpVC)
+        navController.modalPresentationStyle = UIModalPresentationStyle.fullScreen
+        
+        // Add close button
+        classDumpVC.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .close,
+            target: self,
+            action: #selector(dismissClassDump)
+        )
+        
+        present(navController, animated: true)
+    }
+    
+    @objc private func dismissClassDump() {
+        dismiss(animated: true)
     }
 }
 

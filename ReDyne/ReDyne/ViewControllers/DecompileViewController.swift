@@ -271,6 +271,12 @@ class DecompileViewController: UIViewController {
         progressView.progress = 1.0
         statusLabel.text = "Complete!"
         
+        // Save to analysis history
+        AnalysisHistoryManager.shared.addAnalysis(from: output, binaryPath: fileURL.path)
+        
+        // Cache the output for instant re-opening
+        AnalysisCache.shared.save(output, for: fileURL.path)
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             let resultsVC = ResultsViewController(output: output)
             self?.navigationController?.pushViewController(resultsVC, animated: true)

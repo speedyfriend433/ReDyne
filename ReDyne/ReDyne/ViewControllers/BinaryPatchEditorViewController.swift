@@ -500,3 +500,4 @@ extension BinaryPatchEditorViewController {
         return true
     }
 }
+

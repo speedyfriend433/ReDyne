@@ -14,7 +14,6 @@ import Combine
     private let tableView: UITableView = {
         let table = UITableView(frame: .zero, style: .insetGrouped)
         table.translatesAutoresizingMaskIntoConstraints = false
-        table.register(UITableViewCell.self, forCellReuseIdentifier: "FileCell")
         return table
     }()
     
@@ -45,6 +44,7 @@ import Combine
     // MARK: - Properties
     
     private var recentFiles: [String] = []
+    private var analysisHistory: [AnalysisHistoryEntry] = []
     
     // MARK: - Properties for Scene Delegate
     private var storedSceneDelegate: SceneDelegate?
@@ -92,7 +92,13 @@ import Combine
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         loadRecentFiles()
+        loadAnalysisHistory()
         updateInfoLabel()
+    }
+    
+    private func loadAnalysisHistory() {
+        analysisHistory = AnalysisHistoryManager.shared.getHistory()
+        tableView.reloadData()
     }
     
     private func updateInfoLabel() {
@@ -151,7 +157,49 @@ import Combine
     }
     
     private func loadRecentFiles() {
-        recentFiles = UserDefaults.standard.getRecentFiles()
+        var recentFiles = UserDefaults.standard.getRecentFiles()
+        var validFiles: [String] = []
+        var invalidFiles: [String] = []
+        
+        // Validate each recent file
+        for filePath in recentFiles {
+            if FileManager.default.fileExists(atPath: filePath) {
+                validFiles.append(filePath)
+            } else {
+                // Try bookmark for external files
+                if let bookmarkData = UserDefaults.standard.getFileBookmark(for: filePath) {
+                    var isStale = false
+                    do {
+                        let url = try URL(
+                            resolvingBookmarkData: bookmarkData,
+                            options: .withoutUI,
+                            relativeTo: nil,
+                            bookmarkDataIsStale: &isStale
+                        )
+                        
+                        if FileManager.default.fileExists(atPath: url.path) {
+                            validFiles.append(filePath)
+                        } else {
+                            invalidFiles.append(filePath)
+                        }
+                    } catch {
+                        invalidFiles.append(filePath)
+                    }
+                } else {
+                    invalidFiles.append(filePath)
+                }
+            }
+        }
+        
+        // Remove invalid files from UserDefaults
+        if !invalidFiles.isEmpty {
+            for invalidFile in invalidFiles {
+                UserDefaults.standard.removeFileBookmark(for: invalidFile)
+            }
+            UserDefaults.standard.set(validFiles, forKey: Constants.UserDefaultsKeys.recentFiles)
+        }
+        
+        self.recentFiles = validFiles
         tableView.reloadData()
     }
     
@@ -250,13 +298,15 @@ import Combine
     // MARK: - File Processing
     
     private func processFile(at url: URL, addToRecent: Bool = true) {
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        var workingURL = url.standardizedFileURL
+
+        guard FileManager.default.fileExists(atPath: workingURL.path) else {
             ErrorHandler.showError(ReDyneError.invalidFile, in: self)
             return
         }
         
         do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let attributes = try FileManager.default.attributesOfItem(atPath: workingURL.path)
             if let fileSize = attributes[.size] as? Int64, fileSize > Constants.File.maxFileSize {
                 ErrorHandler.showError(ReDyneError.fileTooLarge(size: fileSize, limit: Constants.File.maxFileSize), in: self)
                 return
@@ -264,13 +314,41 @@ import Combine
         } catch {
             ErrorHandler.log(error)
         }
+
+        do {
+            let persistedURL = try SavedBinaryStorage.shared.importBinary(from: workingURL)
+            workingURL = persistedURL
+        } catch {
+            ErrorHandler.log(error)
+            let nsError = error as NSError
+            let reason = nsError.localizedFailureReason ?? nsError.localizedDescription
+            ErrorHandler.showError(
+                ReDyneError.failedToPersistBinary(reason: reason),
+                in: self
+            )
+            return
+        }
         
         if addToRecent {
-            UserDefaults.standard.addRecentFile(url.path)
+            // Add to recent files
+            UserDefaults.standard.addRecentFile(workingURL.path)
+            
+            // Save security-scoped bookmark for external files
+            if workingURL.startAccessingSecurityScopedResource() {
+                if let bookmarkData = try? workingURL.bookmarkData(
+                    options: .minimalBookmark,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                ) {
+                    UserDefaults.standard.saveFileBookmark(bookmarkData, for: workingURL.path)
+                }
+                workingURL.stopAccessingSecurityScopedResource()
+            }
+            
             loadRecentFiles()
         }
         
-        let decompileVC = DecompileViewController(fileURL: url)
+        let decompileVC = DecompileViewController(fileURL: workingURL)
         navigationController?.pushViewController(decompileVC, animated: true)
     }
 }
@@ -280,35 +358,74 @@ import Combine
 extension FilePickerViewController: UITableViewDataSource {
     
     func numberOfSections(in tableView: UITableView) -> Int {
-        return 1
+        return 2  // Saved Analyses + Recent Files
     }
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return recentFiles.isEmpty ? 1 : recentFiles.count
+        if section == 0 {
+            // Saved Analyses
+            return analysisHistory.isEmpty ? 1 : min(analysisHistory.count, 5)  // Show up to 5
+        } else {
+            // Recent Files
+            return recentFiles.isEmpty ? 1 : recentFiles.count
+        }
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "FileCell", for: indexPath)
+        let cell = tableView.dequeueReusableCell(withIdentifier: "FileCell") 
+            ?? UITableViewCell(style: .subtitle, reuseIdentifier: "FileCell")
         cell.accessoryType = .disclosureIndicator
         
-        if recentFiles.isEmpty {
-            cell.textLabel?.text = "No recent files"
-            cell.textLabel?.textColor = .secondaryLabel
-            cell.selectionStyle = .none
-            cell.accessoryType = .none
+        if indexPath.section == 0 {
+            // Saved Analyses section
+            if analysisHistory.isEmpty {
+                cell.textLabel?.text = "No saved analyses yet"
+                cell.detailTextLabel?.text = "Analyzed binaries will appear here"
+                cell.textLabel?.textColor = .secondaryLabel
+                cell.detailTextLabel?.textColor = .tertiaryLabel
+                cell.selectionStyle = .none
+                cell.accessoryType = .none
+            } else {
+                let entry = analysisHistory[indexPath.row]
+                cell.textLabel?.text = "📦 \(entry.binaryName)"
+                cell.detailTextLabel?.text = "\(entry.formattedDate) • \(entry.formattedFileSize) • \(entry.totalFunctions) functions"
+                cell.textLabel?.textColor = .label
+                cell.detailTextLabel?.textColor = .secondaryLabel
+                cell.selectionStyle = .default
+                cell.accessoryType = .disclosureIndicator
+            }
         } else {
-            let path = recentFiles[indexPath.row]
-            cell.textLabel?.text = (path as NSString).lastPathComponent
-            cell.detailTextLabel?.text = path
-            cell.textLabel?.textColor = .label
-            cell.selectionStyle = .default
+            // Recent Files section
+            if recentFiles.isEmpty {
+                cell.textLabel?.text = "No recent files"
+                cell.textLabel?.textColor = .secondaryLabel
+                cell.selectionStyle = .none
+                cell.accessoryType = .none
+            } else {
+                let path = recentFiles[indexPath.row]
+                cell.textLabel?.text = (path as NSString).lastPathComponent
+                cell.detailTextLabel?.text = path
+                cell.textLabel?.textColor = .label
+                cell.selectionStyle = .default
+            }
         }
         
         return cell
     }
     
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        return "Recent Files"
+        if section == 0 {
+            return analysisHistory.isEmpty ? nil : "💾 Saved Analyses (Tap to Re-open)"
+        } else {
+            return "📂 Recent Files"
+        }
+    }
+    
+    func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        if section == 0 && !analysisHistory.isEmpty && analysisHistory.count > 5 {
+            return "Showing 5 of \(analysisHistory.count) • Tap 'View All' in Settings"
+        }
+        return nil
     }
 }
 
@@ -319,13 +436,30 @@ extension FilePickerViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         
+        if indexPath.section == 0 {
+            // Saved Analyses section
+            guard !analysisHistory.isEmpty else { return }
+            let entry = analysisHistory[indexPath.row]
+            reopenAnalysis(entry)
+            return
+        }
+        
+        // Recent Files section
         guard !recentFiles.isEmpty else { return }
         
         let path = recentFiles[indexPath.row]
         
+        // First check if file exists at the original path
+        if FileManager.default.fileExists(atPath: path) {
+            let url = URL(fileURLWithPath: path)
+            processFile(at: url, addToRecent: false)
+            return
+        }
+        
+        // Try to use security-scoped bookmark as fallback
         if let bookmarkData = UserDefaults.standard.getFileBookmark(for: path) {
+            var isStale = false
             do {
-                var isStale = false
                 let url = try URL(
                     resolvingBookmarkData: bookmarkData,
                     options: .withoutUI,
@@ -338,6 +472,7 @@ extension FilePickerViewController: UITableViewDelegate {
                     return
                 }
                 
+                // Update bookmark if it's stale
                 if isStale {
                     if let newBookmarkData = try? url.bookmarkData(
                         options: .minimalBookmark,
@@ -348,7 +483,12 @@ extension FilePickerViewController: UITableViewDelegate {
                     }
                 }
                 
-                processFile(at: url, addToRecent: false)
+                // Verify the file still exists at the bookmarked location
+                if FileManager.default.fileExists(atPath: url.path) {
+                    processFile(at: url, addToRecent: false)
+                } else {
+                    showFileNotFoundAlert(at: indexPath)
+                }
                 
                 return
             } catch {
@@ -356,12 +496,8 @@ extension FilePickerViewController: UITableViewDelegate {
             }
         }
         
-        let url = URL(fileURLWithPath: path)
-        if FileManager.default.fileExists(atPath: path) {
-            processFile(at: url, addToRecent: false)
-        } else {
-            showFileNotFoundAlert(at: indexPath)
-        }
+        // File not found - show alert
+        showFileNotFoundAlert(at: indexPath)
     }
     
     private func showFileNotFoundAlert(at indexPath: IndexPath) {
@@ -385,19 +521,121 @@ extension FilePickerViewController: UITableViewDelegate {
     }
     
     func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-        if editingStyle == .delete && !recentFiles.isEmpty {
-            let path = recentFiles[indexPath.row]
-            recentFiles.remove(at: indexPath.row)
-            UserDefaults.standard.set(recentFiles, forKey: Constants.UserDefaultsKeys.recentFiles)
-            
-            UserDefaults.standard.removeFileBookmark(for: path)
-            
-            if recentFiles.isEmpty {
-                tableView.reloadData()
+        if editingStyle == .delete {
+            if indexPath.section == 0 {
+                // Delete from Saved Analyses
+                guard !analysisHistory.isEmpty else { return }
+                let entry = analysisHistory[indexPath.row]
+                AnalysisHistoryManager.shared.removeEntry(with: entry.id)
+                loadAnalysisHistory()
             } else {
-                tableView.deleteRows(at: [indexPath], with: .fade)
+                // Delete from Recent Files
+                guard !recentFiles.isEmpty else { return }
+                let path = recentFiles[indexPath.row]
+                recentFiles.remove(at: indexPath.row)
+                UserDefaults.standard.set(recentFiles, forKey: Constants.UserDefaultsKeys.recentFiles)
+                
+                UserDefaults.standard.removeFileBookmark(for: path)
+                
+                if recentFiles.isEmpty {
+                    tableView.reloadData()
+                } else {
+                    tableView.deleteRows(at: [indexPath], with: .fade)
+                }
             }
         }
+    }
+    
+    private func reopenAnalysis(_ entry: AnalysisHistoryEntry) {
+        print("🔍 Attempting to reopen: \(entry.binaryName)")
+        print("🔍 Stored path: \(entry.binaryPath)")
+        print("🔍 File exists: \(FileManager.default.fileExists(atPath: entry.binaryPath))")
+        
+        // Check if file still exists at original path
+        if FileManager.default.fileExists(atPath: entry.binaryPath) {
+            reopenWithPath(entry.binaryPath, entry: entry)
+            return
+        }
+        
+        print("❌ File not found at stored path!")
+        
+        // Use the improved AnalysisHistoryManager to find moved files
+        if let foundPath = AnalysisHistoryManager.shared.findMovedFile(for: entry) {
+            print("✅ Found moved file at: \(foundPath)")
+            reopenWithPath(foundPath, entry: entry)
+            return
+        }
+        
+        print("❌ File not found using AnalysisHistoryManager strategies")
+        
+        // Fallback to SavedBinaries search for additional coverage
+        let savedBinaries = SavedBinaryStorage.shared.listSavedBinaries()
+        
+        // Strategy: Look in SavedBinaries by exact name match
+        if let matchingBinary = savedBinaries.first(where: { $0.lastPathComponent == entry.binaryName }) {
+            print("✅ Found file in SavedBinaries by name: \(matchingBinary.path)")
+            reopenWithPath(matchingBinary.path, entry: entry)
+            return
+        }
+        
+        // Strategy: Look in SavedBinaries by name without extension
+        let baseName = (entry.binaryName as NSString).deletingPathExtension
+        if let matchingBinary = savedBinaries.first(where: { 
+            ($0.lastPathComponent as NSString).deletingPathExtension == baseName 
+        }) {
+            print("✅ Found file in SavedBinaries by base name: \(matchingBinary.path)")
+            reopenWithPath(matchingBinary.path, entry: entry)
+            return
+        }
+        
+        // Strategy: Look in SavedBinaries by file size match
+        if let matchingBinary = savedBinaries.first(where: { url in
+            do {
+                let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                if let size = attributes[.size] as? UInt64 {
+                    return size == entry.fileSize
+                }
+            } catch {
+                return false
+            }
+            return false
+        }) {
+            print("✅ Found file in SavedBinaries by size: \(matchingBinary.path)")
+            reopenWithPath(matchingBinary.path, entry: entry)
+            return
+        }
+        
+        // No file found - show alert
+        showFileNotFoundAlert(for: entry)
+    }
+    
+    private func reopenWithPath(_ path: String, entry: AnalysisHistoryEntry) {
+        // Try to load from cache first
+        if let cachedOutput = AnalysisCache.shared.load(for: path) {
+            print("⚡ Using cached analysis - INSTANT!")
+            let resultsVC = ResultsViewController(output: cachedOutput)
+            navigationController?.pushViewController(resultsVC, animated: true)
+            return
+        }
+        
+        // No cache, re-analyze the binary
+        print("📊 No cache found, re-analyzing...")
+        let url = URL(fileURLWithPath: path)
+        processFile(at: url, addToRecent: false)
+    }
+    
+    private func showFileNotFoundAlert(for entry: AnalysisHistoryEntry) {
+        let alert = UIAlertController(
+            title: "File Not Found",
+            message: "The binary '\(entry.binaryName)' no longer exists at its saved location.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Remove from History", style: .destructive) { [weak self] _ in
+            AnalysisHistoryManager.shared.removeEntry(with: entry.id)
+            self?.loadAnalysisHistory()
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
     }
 }
 
@@ -635,5 +873,4 @@ extension FilePickerViewController: UIDropInteractionDelegate {
         }
     }
 }
-
 

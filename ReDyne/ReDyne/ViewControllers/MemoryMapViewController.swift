@@ -127,8 +127,8 @@ class MemoryMapViewController: UIViewController {
     
     private func populateStats() {
         let totalSize = segments.reduce(0) { $0 + $1.vmSize }
-        let executableSections = sections.count // TODO: filter by protection flags if available
-        let writableSections = sections.count // TODO: filter by protection flags if available
+        let executableSections = sections.filter { ($0.flags & 0x80000400) != 0 }.count // S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
+        let writableSections = sections.filter { ($0.flags & 0x10000000) == 0 }.count // not S_ATTR_READ_ONLY
         
         statsLabel.text = """
         Total VM Size: \(formatBytes(totalSize))
