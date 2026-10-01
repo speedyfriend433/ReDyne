@@ -87,6 +87,8 @@ bool disasm_load_section(DisassemblyContext *ctx, const char *section_name) {
     for (uint32_t i = 0; i < mctx->section_count; i++) {
         SectionInfo *sect = &mctx->sections[i];
         if (strncmp(sect->sectname, section_name, 16) == 0) {
+            if (sect->offset > (uint64_t)mctx->file_size ||
+                sect->size > (uint64_t)mctx->file_size - sect->offset) return false;
             ctx->code_size = sect->size;
             ctx->code_base_addr = sect->addr;
             

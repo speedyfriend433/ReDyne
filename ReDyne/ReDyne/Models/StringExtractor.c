@@ -2,11 +2,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdio.h>
+#include <sys/stat.h>
 
 #define MIN_STRING_LENGTH 4
 #define MAX_STRING_LENGTH 4096
 
 #pragma mark - Helper Functions
+
+/// True when [offset, offset+size) lies inside the file. Section/segment sizes come from
+/// the (untrusted) binary, so they must be validated before being used to size a buffer.
+static bool range_within_file(FILE *file, uint64_t offset, uint64_t size) {
+    struct stat st;
+    if (!file || fstat(fileno(file), &st) != 0 || st.st_size < 0) return false;
+    uint64_t fsize = (uint64_t)st.st_size;
+    return offset <= fsize && size <= fsize - offset;
+}
 
 bool redyne_is_printable(char c) {
     return (c >= 0x20 && c <= 0x7E) || c == '\t' || c == '\n' || c == '\r';
@@ -109,6 +120,7 @@ uint32_t string_extract_cstrings(StringContext *ctx, FILE *file, uint64_t offset
     if (!ctx || !file || size == 0) return 0;
     const char *sect_name = section_name ? section_name : "__cstring";
     
+    if (!range_within_file(file, offset, size)) return 0;
     uint8_t *data = malloc(size);
     if (!data) return 0;
     
@@ -161,6 +173,7 @@ uint32_t string_extract_cfstrings(StringContext *ctx, FILE *file,
 
     if (section_size % entry_size != 0) return 0;
 
+    if (!range_within_file(file, section_offset, section_size)) return 0;
     uint8_t *data = malloc(section_size);
     if (!data) return 0;
 

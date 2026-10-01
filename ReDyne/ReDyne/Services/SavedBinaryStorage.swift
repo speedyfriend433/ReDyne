@@ -66,9 +66,11 @@ final class SavedBinaryStorage {
     
     func isFileInStorage(_ url: URL) -> Bool {
         guard let storageURL = try? storageDirectoryURL() else { return false }
-        let standardizedStoragePath = storageURL.standardizedFileURL.path
-        let standardizedPath = url.standardizedFileURL.path
-        return standardizedPath.hasPrefix(standardizedStoragePath)
+        let standardizedStoragePath = storageURL.standardizedFileURL.resolvingSymlinksInPath().path
+        let standardizedPath = url.standardizedFileURL.resolvingSymlinksInPath().path
+        // Compare with a trailing slash so "SavedBinaries-evil" doesn't match "SavedBinaries"
+        let prefix = standardizedStoragePath.hasSuffix("/") ? standardizedStoragePath : standardizedStoragePath + "/"
+        return standardizedPath.hasPrefix(prefix)
     }
     
     // MARK: - Private Helpers
@@ -118,7 +120,11 @@ final class SavedBinaryStorage {
     
     private func cleanupTemporaryCopyIfNeeded(at url: URL) {
         let path = url.standardizedFileURL.path
-        guard path.contains("-Inbox/") || path.contains("/tmp/") else { return }
+        // Only remove copies that live in this app's own temp/Inbox directories, never a
+        // user's original file that merely has "/tmp/" somewhere in its path.
+        let tempRoot = fileManager.temporaryDirectory.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath().path
+        guard resolved.hasPrefix(tempRoot) || path.contains("/Documents/Inbox/") else { return }
         try? fileManager.removeItem(at: url)
     }
 }

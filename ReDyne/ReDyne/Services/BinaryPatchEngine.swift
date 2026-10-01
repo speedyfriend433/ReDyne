@@ -99,7 +99,7 @@ final class BinaryPatchEngine {
         for patch in patches {
             let rangeStart = patch.fileOffset
             let length = patch.originalBytes.count
-            let rangeEnd = rangeStart + UInt64(length)
+            let rangeEnd = rangeStart.saturatingAdd(UInt64(length))
 
             guard rangeEnd <= UInt64(mutableData.count) else {
                 throw Error.patchOutsideBounds(
@@ -133,7 +133,8 @@ final class BinaryPatchEngine {
         let destinationURL = try resolveOutputURL(for: resolvedURL, options: options)
         var backupPath: String?
 
-        if options.createBackup && destinationURL != resolvedURL {
+        // Back up whenever requested, including in-place writes (the case where it matters most)
+        if options.createBackup {
             let backupURL = try createBackupIfNeeded(for: resolvedURL, suffix: options.backupSuffix)
             backupPath = backupURL?.path
         }
@@ -170,7 +171,7 @@ final class BinaryPatchEngine {
         }
 
         let length = patch.originalBytes.count
-        let end = patch.fileOffset + UInt64(length)
+        let end = patch.fileOffset.saturatingAdd(UInt64(length))
         guard end <= UInt64(data.count) else {
             throw Error.patchOutsideBounds(
                 patchID: patch.id,
@@ -212,7 +213,7 @@ final class BinaryPatchEngine {
         var mismatches: [PatchMismatch] = []
         for patch in patchSet.patches where patch.enabled {
             let length = patch.originalBytes.count
-            let end = patch.fileOffset + UInt64(length)
+            let end = patch.fileOffset.saturatingAdd(UInt64(length))
             if end > UInt64(data.count) {
                 throw Error.patchOutsideBounds(
                     patchID: patch.id,
@@ -272,7 +273,7 @@ final class BinaryPatchEngine {
 
         for (index, patch) in sorted.enumerated() where index > 0 {
             let previous = sorted[index - 1]
-            let previousEnd = previous.fileOffset + UInt64(previous.originalBytes.count)
+            let previousEnd = previous.fileOffset.saturatingAdd(UInt64(previous.originalBytes.count))
             if patch.fileOffset < previousEnd {
                 let overlapRange = patch.fileOffset ..< previousEnd
                 throw Error.overlappingPatches(
@@ -341,5 +342,15 @@ final class BinaryPatchEngine {
             try? FileManager.default.removeItem(at: backupURL)
             return nil
         }
+    }
+}
+
+
+private extension UInt64 {
+    /// Adds without trapping; clamps to `UInt64.max` so imported patch sets with absurd
+    /// offsets fail the bounds/overlap checks instead of crashing the app.
+    func saturatingAdd(_ other: UInt64) -> UInt64 {
+        let (result, overflow) = addingReportingOverflow(other)
+        return overflow ? UInt64.max : result
     }
 }

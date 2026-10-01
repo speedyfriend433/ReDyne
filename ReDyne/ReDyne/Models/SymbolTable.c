@@ -36,7 +36,8 @@ SymbolTableContext* symbol_table_create(MachOContext *macho_ctx) {
     if (!ctx) return NULL;
     
     ctx->macho_ctx = macho_ctx;
-    ctx->symbol_count = macho_ctx->nsyms;
+    // Cap before allocating: nsyms is attacker-controlled (up to 4G entries)
+    ctx->symbol_count = macho_ctx->nsyms > 500000 ? 500000 : macho_ctx->nsyms;
     ctx->symbols = (SymbolInfo*)calloc(ctx->symbol_count, sizeof(SymbolInfo));
     
     if (!ctx->symbols) {
@@ -77,7 +78,8 @@ bool symbol_table_load_strings(SymbolTableContext *ctx) {
     if (mctx->stroff + mctx->strsize > (uint64_t)mctx->file_size) return false;
 
     ctx->string_table_size = mctx->strsize;
-    ctx->string_table = (char*)malloc(ctx->string_table_size);
+    // +1 so the last string is always NUL-terminated even if the file's table is not
+    ctx->string_table = (char*)malloc((size_t)ctx->string_table_size + 1);
     if (!ctx->string_table) return false;
 
     fseek(mctx->file, mctx->stroff, SEEK_SET);
@@ -88,6 +90,7 @@ bool symbol_table_load_strings(SymbolTableContext *ctx) {
         ctx->string_table = NULL;
         return false;
     }
+    ctx->string_table[ctx->string_table_size] = '\0';
     
     return true;
 }

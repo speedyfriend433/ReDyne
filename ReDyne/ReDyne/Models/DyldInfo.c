@@ -224,7 +224,10 @@ typedef struct {
     uint32_t size;
     uint32_t export_count;
     ExportInfo *exports;
+    uint32_t nodes_visited;   // work budget: crafted tries can cycle and fan out exponentially
 } TrieContext;
+
+#define MAX_TRIE_NODES 200000
 
 static void traverse_export_trie(TrieContext *tctx, const uint8_t *p, const char *prefix, uint32_t prefix_len, int depth);
 static void traverse_export_trie(TrieContext *tctx, const uint8_t *p, const char *prefix, uint32_t prefix_len, int depth) {
@@ -234,6 +237,7 @@ static void traverse_export_trie(TrieContext *tctx, const uint8_t *p, const char
     if (p < tctx->data || p >= tctx->data + tctx->size) return;
     if (tctx->export_count >= MAX_EXPORTS) return;
     if (prefix_len > 255) return;
+    if (++tctx->nodes_visited > MAX_TRIE_NODES) return;
     
     uint64_t terminal_size = 0;
     const uint8_t *term_ptr = p;
@@ -243,7 +247,8 @@ static void traverse_export_trie(TrieContext *tctx, const uint8_t *p, const char
         if ((b & 0x80) == 0) break;
     }
     
-    if (terminal_size > 0 && term_ptr + terminal_size <= tctx->data + tctx->size) {
+    // Compare against the remaining length: `ptr + huge` can wrap and pass a pointer compare
+    if (terminal_size > 0 && terminal_size <= (uint64_t)(tctx->data + tctx->size - term_ptr)) {
         const uint8_t *info_ptr = term_ptr;
         
         uint64_t flags = 0;
@@ -273,6 +278,7 @@ static void traverse_export_trie(TrieContext *tctx, const uint8_t *p, const char
         term_ptr += terminal_size;
     }
     
+    if (term_ptr >= tctx->data + tctx->size) return;
     uint8_t child_count = *term_ptr++;
     
     for (uint8_t i = 0; i < child_count && term_ptr < tctx->data + tctx->size; i++) {

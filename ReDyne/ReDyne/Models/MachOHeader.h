@@ -43,7 +43,7 @@ typedef struct {
 } MachOHeaderInfo;
 
 typedef struct {
-    char segname[16];
+    char segname[17];
     uint64_t vmaddr;
     uint64_t vmsize;
     uint64_t fileoff;
@@ -55,8 +55,8 @@ typedef struct {
 } SegmentInfo;
 
 typedef struct {
-    char sectname[16];
-    char segname[16];
+    char sectname[17];
+    char segname[17];
     uint64_t addr;
     uint64_t size;
     uint32_t offset;

@@ -57,7 +57,7 @@ NSNotificationName const ReDyneOpenFileFromShareNotification = @"ReDyneOpenFileF
     if (!context) return;
     
     NSURL *url = context.URL;
-    NSLog(@"ReDyne received URL: %@", url);
+    NSLog(@"ReDyne received URL with scheme: %@", url.scheme);
     
     if ([url.scheme isEqualToString:@"redyne"]) {
         // Handle redyne://open?file=<filename> from share extension
@@ -70,6 +70,15 @@ NSNotificationName const ReDyneOpenFileFromShareNotification = @"ReDyneOpenFileF
             }
         }
         
+        // Reject anything that is not a plain file name (blocks "../" traversal from untrusted URLs)
+        if (filename && (filename.length == 0 ||
+                         ![filename isEqualToString:filename.lastPathComponent] ||
+                         [filename isEqualToString:@"."] || [filename isEqualToString:@".."] ||
+                         [filename containsString:@"\0"])) {
+            NSLog(@"Rejected redyne:// URL with invalid file name");
+            filename = nil;
+        }
+
         if (filename) {
             // Look for the file in the App Group shared container
             NSURL *containerURL = [[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:@"group.com.jian.ReDyne"];
