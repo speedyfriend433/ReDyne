@@ -295,6 +295,34 @@ bool macho_resolve_entry_point(MachOContext *ctx) {
 
 #pragma mark - Load Command Validation
 
+/// Minimum cmdsize required before the command payload may be cast to its struct.
+static uint32_t macho_min_cmdsize(uint32_t cmd) {
+    switch (cmd) {
+        case LC_SYMTAB: return sizeof(struct symtab_command);
+        case LC_DYLD_INFO:
+        case LC_DYLD_INFO_ONLY: return sizeof(struct dyld_info_command);
+        case LC_ENCRYPTION_INFO: return sizeof(struct encryption_info_command);
+        case LC_ENCRYPTION_INFO_64: return sizeof(struct encryption_info_command_64);
+        case LC_UUID: return sizeof(struct uuid_command);
+        case LC_MAIN: return sizeof(struct entry_point_command);
+        case LC_FUNCTION_STARTS:
+        case LC_DATA_IN_CODE:
+        case LC_DYLD_CHAINED_FIXUPS:
+        case LC_DYLD_EXPORTS_TRIE:
+        case LC_CODE_SIGNATURE: return sizeof(struct linkedit_data_command);
+        case LC_BUILD_VERSION: return sizeof(struct build_version_command);
+        case LC_SOURCE_VERSION: return sizeof(struct source_version_command);
+        case LC_RPATH: return sizeof(struct rpath_command);
+        case LC_SEGMENT: return sizeof(struct segment_command);
+        case LC_SEGMENT_64: return sizeof(struct segment_command_64);
+        case LC_VERSION_MIN_MACOSX:
+        case LC_VERSION_MIN_IPHONEOS:
+        case LC_VERSION_MIN_TVOS:
+        case LC_VERSION_MIN_WATCHOS: return sizeof(struct version_min_command);
+        default: return 8;
+    }
+}
+
 bool macho_validate_load_commands(MachOContext *ctx) {
     if (!ctx) return false;
 
@@ -676,6 +704,16 @@ bool macho_parse_load_commands(MachOContext *ctx) {
         fseek(ctx->file, cmd_offset, SEEK_SET);
         if (fread(ctx->load_commands[i].data, lc.cmdsize, 1, ctx->file) != 1) return false;
 
+        // The payload is cast to a fixed-size struct below, so reject truncated commands
+        if (lc.cmdsize < macho_min_cmdsize(lc.cmd)) {
+            char msg[MAX_WARNING_LENGTH];
+            snprintf(msg, sizeof(msg), "Load command %u (0x%X) cmdsize %u is smaller than its structure (%u)",
+                     i, lc.cmd, lc.cmdsize, macho_min_cmdsize(lc.cmd));
+            macho_add_warning(ctx, msg, (uint32_t)cmd_offset, 2);
+            ctx->load_commands[i].cmd = 0;
+            continue;
+        }
+
         switch (lc.cmd) {
             case LC_SYMTAB: {
                 struct symtab_command *symtab = (struct symtab_command*)ctx->load_commands[i].data;
@@ -806,6 +844,27 @@ bool macho_parse_load_commands(MachOContext *ctx) {
                 ctx->linker_option_count++;
                 break;
             }
+            case LC_VERSION_MIN_MACOSX:
+            case LC_VERSION_MIN_IPHONEOS:
+            case LC_VERSION_MIN_TVOS:
+            case LC_VERSION_MIN_WATCHOS: {
+                // Fallback platform info for older binaries without LC_BUILD_VERSION
+                if (ctx->platform == 0) {
+                    struct version_min_command *vm = (struct version_min_command*)ctx->load_commands[i].data;
+                    ctx->min_version = ctx->header.is_swapped ? swap_uint32(vm->version) : vm->version;
+                    ctx->sdk_version = ctx->header.is_swapped ? swap_uint32(vm->sdk) : vm->sdk;
+                    switch (lc.cmd) {
+                        case LC_VERSION_MIN_MACOSX:    ctx->platform = PLATFORM_MACOS;   break;
+                        case LC_VERSION_MIN_IPHONEOS:  ctx->platform = PLATFORM_IOS;     break;
+                        case LC_VERSION_MIN_TVOS:      ctx->platform = PLATFORM_TVOS;    break;
+                        case LC_VERSION_MIN_WATCHOS:   ctx->platform = PLATFORM_WATCHOS; break;
+                        default: break;
+                    }
+                    ctx->minos = ctx->min_version;
+                    ctx->sdk = ctx->sdk_version;
+                }
+                break;
+            }
             case LC_SEGMENT:
             case LC_SEGMENT_64:
             case LC_CODE_SIGNATURE:
@@ -822,28 +881,7 @@ bool macho_parse_load_commands(MachOContext *ctx) {
             case LC_SUB_LIBRARY:
             case LC_TWOLEVEL_HINTS:
             case LC_PREBIND_CKSUM:
-            case LC_VERSION_MIN_MACOSX:
-            case LC_VERSION_MIN_IPHONEOS:
-            case LC_VERSION_MIN_TVOS:
-            case LC_VERSION_MIN_WATCHOS: {
-                // Fallback platform info for older binaries without LC_BUILD_VERSION
-                if (ctx->platform == 0) {
-                    struct version_min_command *vm = (struct version_min_command*)ctx->load_commands[i].data;
-                    ctx->min_version = ctx->header.is_swapped ? swap_uint32(vm->version) : vm->version;
-                    ctx->sdk_version = ctx->header.is_swapped ? swap_uint32(vm->sdk) : vm->sdk;
-                    // Map LC type to platform constant as fallback
-                    switch (lc.cmd) {
-                        case LC_VERSION_MIN_MACOSX:    ctx->platform = PLATFORM_MACOS;   break;
-                        case LC_VERSION_MIN_IPHONEOS:  ctx->platform = PLATFORM_IOS;     break;
-                        case LC_VERSION_MIN_TVOS:      ctx->platform = PLATFORM_TVOS;    break;
-                        case LC_VERSION_MIN_WATCHOS:   ctx->platform = PLATFORM_WATCHOS; break;
-                        default: break;
-                    }
-                    ctx->minos = ctx->min_version;
-                    ctx->sdk = ctx->sdk_version;
-                }
                 break;
-            }
             case LC_DYLD_ENVIRONMENT:
             case LC_THREAD:
             case LC_UNIXTHREAD:
@@ -899,6 +937,7 @@ uint32_t macho_extract_segments(MachOContext *ctx) {
             SegmentInfo *info = &ctx->segments[ctx->segment_count++];
 
             strncpy(info->segname, seg->segname, 16);
+            info->segname[16] = '\0';
             info->vmaddr = ctx->header.is_swapped ? swap_uint64(seg->vmaddr) : seg->vmaddr;
             info->vmsize = ctx->header.is_swapped ? swap_uint64(seg->vmsize) : seg->vmsize;
             info->fileoff = (ctx->header.is_swapped ? swap_uint64(seg->fileoff) : seg->fileoff)
@@ -933,6 +972,7 @@ uint32_t macho_extract_segments(MachOContext *ctx) {
             SegmentInfo *info = &ctx->segments[ctx->segment_count++];
 
             strncpy(info->segname, seg->segname, 16);
+            info->segname[16] = '\0';
             info->vmaddr = ctx->header.is_swapped ? swap_uint32(seg->vmaddr) : seg->vmaddr;
             info->vmsize = ctx->header.is_swapped ? swap_uint32(seg->vmsize) : seg->vmsize;
             info->fileoff = (uint64_t)(ctx->header.is_swapped ? swap_uint32(seg->fileoff) : seg->fileoff)
@@ -999,6 +1039,11 @@ uint32_t macho_extract_sections(MachOContext *ctx) {
             struct segment_command_64 *seg = (struct segment_command_64*)ctx->load_commands[i].data;
             uint32_t nsects = ctx->header.is_swapped ? swap_uint32(seg->nsects) : seg->nsects;
             struct section_64 *sections = (struct section_64*)((char*)seg + sizeof(struct segment_command_64));
+            uint32_t max_sects = (ctx->load_commands[i].cmdsize - (uint32_t)sizeof(struct segment_command_64)) / (uint32_t)sizeof(struct section_64);
+            if (nsects > max_sects) {
+                macho_add_warning(ctx, "Segment nsects exceeds load command size; clamping", 0, 1);
+                nsects = max_sects;
+            }
 
             // Find matching parent segment for bounds checking
             uint64_t seg_fileoff = 0, seg_filesize = 0;
@@ -1010,7 +1055,9 @@ uint32_t macho_extract_sections(MachOContext *ctx) {
             for (uint32_t j = 0; j < nsects && ctx->section_count < sect_count; j++) {
                 SectionInfo *info = &ctx->sections[ctx->section_count++];
                 strncpy(info->sectname, sections[j].sectname, 16);
+                info->sectname[16] = '\0';
                 strncpy(info->segname, sections[j].segname, 16);
+                info->segname[16] = '\0';
                 info->addr = ctx->header.is_swapped ? swap_uint64(sections[j].addr) : sections[j].addr;
                 info->size = ctx->header.is_swapped ? swap_uint64(sections[j].size) : sections[j].size;
                 info->offset = (ctx->header.is_swapped ? swap_uint32(sections[j].offset) : sections[j].offset)
@@ -1033,6 +1080,11 @@ uint32_t macho_extract_sections(MachOContext *ctx) {
             struct segment_command *seg = (struct segment_command*)ctx->load_commands[i].data;
             uint32_t nsects = ctx->header.is_swapped ? swap_uint32(seg->nsects) : seg->nsects;
             struct section *sections = (struct section*)((char*)seg + sizeof(struct segment_command));
+            uint32_t max_sects = (ctx->load_commands[i].cmdsize - (uint32_t)sizeof(struct segment_command)) / (uint32_t)sizeof(struct section);
+            if (nsects > max_sects) {
+                macho_add_warning(ctx, "Segment nsects exceeds load command size; clamping", 0, 1);
+                nsects = max_sects;
+            }
 
             uint64_t seg_fileoff = 0, seg_filesize = 0;
             if (seg_idx < ctx->segment_count) {
@@ -1043,7 +1095,9 @@ uint32_t macho_extract_sections(MachOContext *ctx) {
             for (uint32_t j = 0; j < nsects && ctx->section_count < sect_count; j++) {
                 SectionInfo *info = &ctx->sections[ctx->section_count++];
                 strncpy(info->sectname, sections[j].sectname, 16);
+                info->sectname[16] = '\0';
                 strncpy(info->segname, sections[j].segname, 16);
+                info->segname[16] = '\0';
                 info->addr = ctx->header.is_swapped ? swap_uint32(sections[j].addr) : sections[j].addr;
                 info->size = ctx->header.is_swapped ? swap_uint32(sections[j].size) : sections[j].size;
                 info->offset = (ctx->header.is_swapped ? swap_uint32(sections[j].offset) : sections[j].offset)

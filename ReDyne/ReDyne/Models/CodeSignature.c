@@ -7,11 +7,11 @@
 
 // MARK: - Helper Functions
 
-static uint32_t find_code_signature_offset(MachOContext *ctx, uint32_t *size) {
+static uint64_t find_code_signature_offset(MachOContext *ctx, uint32_t *size) {
     if (!ctx) return 0;
     
     uint32_t header_size = ctx->header.is_64bit ? sizeof(struct mach_header_64) : sizeof(struct mach_header);
-    fseek(ctx->file, header_size, SEEK_SET);
+    fseek(ctx->file, (long)(ctx->base_offset + header_size), SEEK_SET);
     
     for (uint32_t i = 0; i < ctx->header.ncmds; i++) {
         uint32_t cmd, cmdsize;
@@ -32,10 +32,10 @@ static uint32_t find_code_signature_offset(MachOContext *ctx, uint32_t *size) {
             
             if (ctx->header.is_swapped) {
                 *size = __builtin_bswap32(sig_cmd.datasize);
-                return __builtin_bswap32(sig_cmd.dataoff);
+                return (uint64_t)__builtin_bswap32(sig_cmd.dataoff) + ctx->base_offset;
             } else {
                 *size = sig_cmd.datasize;
-                return sig_cmd.dataoff;
+                return (uint64_t)sig_cmd.dataoff + ctx->base_offset;
             }
         }
         
@@ -59,7 +59,7 @@ CodeSignatureInfo* codesign_parse_signature(MachOContext *ctx) {
     if (!info) return NULL;
     
     uint32_t sig_size = 0;
-    uint32_t sig_offset = find_code_signature_offset(ctx, &sig_size);
+    uint64_t sig_offset = find_code_signature_offset(ctx, &sig_size);
     
     if (sig_offset == 0 || sig_size == 0) {
         info->is_signed = false;
@@ -70,12 +70,12 @@ CodeSignatureInfo* codesign_parse_signature(MachOContext *ctx) {
     info->signature_size = sig_size;
     info->is_adhoc_signed = (sig_size < 4096);
 
-    if ((uint64_t)sig_offset + sig_size > (uint64_t)ctx->file_size) {
+    if (sig_offset + sig_size > (uint64_t)ctx->file_size) {
         info->is_signed = false;
         return info;
     }
 
-    fseek(ctx->file, sig_offset, SEEK_SET);
+    fseek(ctx->file, (long)sig_offset, SEEK_SET);
 
     uint8_t *sig_data = (uint8_t*)malloc(sig_size);
     if (!sig_data) {
@@ -120,10 +120,13 @@ CodeSignatureInfo* codesign_parse_signature(MachOContext *ctx) {
             if (super_magic == 0xc00cdefa) {
                 first_blob_offset = __builtin_bswap32(first_blob_offset);
             }
-            if (first_blob_offset < sig_size && first_blob_offset + 0x60 < sig_size) {
+            if ((uint64_t)first_blob_offset + 0x60 < sig_size) {
                 const char *ident = (const char*)(sig_data + first_blob_offset + 0x60);
                 if (ident[0] >= 32 && ident[0] <= 126) { // Looks like a valid string
-                    strncpy(info->bundle_id, ident, sizeof(info->bundle_id) - 1);
+                    size_t avail = sig_size - ((size_t)first_blob_offset + 0x60);
+                    size_t n = strnlen(ident, avail);
+                    if (n > sizeof(info->bundle_id) - 1) n = sizeof(info->bundle_id) - 1;
+                    memcpy(info->bundle_id, ident, n);
                 }
             }
         }
@@ -144,7 +147,7 @@ CodeSignatureInfo* codesign_parse_signature(MachOContext *ctx) {
 
         index_offset += 8;
 
-        if (blob_offset >= sig_size) {
+        if ((uint64_t)blob_offset + 4 > sig_size) {
             continue;
         }
 
@@ -155,15 +158,19 @@ CodeSignatureInfo* codesign_parse_signature(MachOContext *ctx) {
             info->has_entitlements = true;
         }
         
-        if (blob_type == 0 && blob_offset + 20 < sig_size) {
+        if (blob_type == 0 && (uint64_t)blob_offset + 24 <= sig_size) {
             uint32_t ident_offset = *(uint32_t*)(blob_data + 20);
             if (super_magic != 0xc00cfade) {
                 ident_offset = __builtin_bswap32(ident_offset);
             }
-            if (blob_offset + ident_offset < sig_size) {
+            // 64-bit sum: a uint32 sum can wrap and defeat the bounds check
+            if ((uint64_t)blob_offset + ident_offset < sig_size) {
                 const char *ident = (const char*)(blob_data + ident_offset);
                 if (strlen(info->bundle_id) == 0) {
-                    strncpy(info->bundle_id, ident, sizeof(info->bundle_id) - 1);
+                    size_t avail = sig_size - ((size_t)blob_offset + ident_offset);
+                    size_t n = strnlen(ident, avail);
+                    if (n > sizeof(info->bundle_id) - 1) n = sizeof(info->bundle_id) - 1;
+                    memcpy(info->bundle_id, ident, n);
                 }
             }
         }
@@ -193,41 +200,46 @@ EntitlementsInfo* codesign_parse_entitlements(MachOContext *ctx) {
     info->entitlement_count = 0;
     
     uint32_t sig_size = 0;
-    uint32_t sig_offset = find_code_signature_offset(ctx, &sig_size);
+    uint64_t sig_offset = find_code_signature_offset(ctx, &sig_size);
     
     if (sig_offset == 0) {
         return info;
     }
     
-    if ((uint64_t)sig_offset + sig_size > (uint64_t)ctx->file_size) {
+    if (sig_offset + sig_size > (uint64_t)ctx->file_size) {
         return info;
     }
 
     uint8_t *sig_data = (uint8_t*)malloc(sig_size);
     if (!sig_data) return info;
 
-    fseek(ctx->file, sig_offset, SEEK_SET);
+    fseek(ctx->file, (long)sig_offset, SEEK_SET);
     if (fread(sig_data, 1, sig_size, ctx->file) != sig_size) {
         free(sig_data);
         return info;
     }
 
-    for (uint32_t i = 0; i + 8 <= sig_size; i++) {
-        uint32_t magic = __builtin_bswap32(*(uint32_t*)(sig_data + i));
-        if (magic == 0xfade7171) {
-            uint32_t length = __builtin_bswap32(*(uint32_t*)(sig_data + i + 4));
-            
-            if (length > 8 && length < sig_size - i) {
-                uint8_t *entitlements_data = sig_data + i + 8;
+    // Only trust entitlement blobs referenced from the SuperBlob index; scanning raw
+    // bytes would let any data inside the signature masquerade as entitlements.
+    // SuperBlob fields are always big-endian on disk.
+    if (sig_size >= 12 && __builtin_bswap32(*(uint32_t*)sig_data) == 0xfade0cc0) {
+        uint32_t count = __builtin_bswap32(*(uint32_t*)(sig_data + 8));
+        for (uint32_t i = 0; i < count && i < 100; i++) {
+            uint64_t idx = 12 + (uint64_t)i * 8;
+            if (idx + 8 > sig_size) break;
+            uint32_t blob_off = __builtin_bswap32(*(uint32_t*)(sig_data + idx + 4));
+            if ((uint64_t)blob_off + 8 > sig_size) continue;
+            if (__builtin_bswap32(*(uint32_t*)(sig_data + blob_off)) != 0xfade7171) continue;
+
+            uint32_t length = __builtin_bswap32(*(uint32_t*)(sig_data + blob_off + 4));
+            if (length > 8 && (uint64_t)blob_off + length <= sig_size) {
                 size_t entitlements_len = length - 8;
-                
                 info->entitlements_xml = (char*)malloc(entitlements_len + 1);
                 if (info->entitlements_xml) {
-                    memcpy(info->entitlements_xml, entitlements_data, entitlements_len);
+                    memcpy(info->entitlements_xml, sig_data + blob_off + 8, entitlements_len);
                     info->entitlements_xml[entitlements_len] = '\0';
                     info->xml_length = entitlements_len;
                 }
-                
                 break;
             }
         }
