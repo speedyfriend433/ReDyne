@@ -70,6 +70,9 @@ typedef struct {
     
     int64_t slide;
     
+    /// Set when an entry ceiling was hit and some rebases/binds/exports were dropped.
+    bool truncated;
+    
 } RelocationContext;
 
 #pragma mark - Function Declarations
