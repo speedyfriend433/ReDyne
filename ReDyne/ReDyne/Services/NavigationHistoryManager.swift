@@ -1,120 +1,71 @@
 import Foundation
 
-// MARK: - Navigation Entry
-
-/// Represents a single navigation action that can be replayed via back/forward traversal.
+/// A destination in the binary analysis interface.
 enum NavigationEntry: Equatable {
-    /// User switched to one of the 5 main sections (0 = Info, 1 = Symbols, 2 = Strings, 3 = Code, 4 = Functions).
     case section(index: Int)
-
-    /// User jumped to a disassembly address.
     case disassembly(address: UInt64)
-
-    /// User navigated to a symbol by name.
     case symbol(name: String)
-
-    /// User opened the hex viewer at a given file offset.
     case hexView(offset: UInt64)
 }
 
-// MARK: - NavigationHistoryManager
-
-/// Maintains a bounded back/forward navigation stack, similar to a web browser.
-///
-/// Usage:
-/// - Call `push(entry:)` every time the user performs a navigation action.
-/// - Call `goBack()` / `goForward()` to traverse the history.
-/// - Pushing a new entry while the cursor is not at the end of the stack discards the forward history.
+/// History belongs to the UI, including callbacks that replay a destination.
+/// Main-actor isolation keeps synchronous reads, updates, and replay on the same
+/// executor without recursively dispatching to a serial queue.
+@MainActor
 final class NavigationHistoryManager {
+    private static let maxDepth = 100
+    private var entries: [NavigationEntry] = []
+    private var currentIndex = -1
+    private var replayDepth = 0
 
-    // MARK: - Configuration
-
-    /// Maximum number of entries retained in the history stack.
-    static let maxDepth = 50
-
-    // MARK: - State
-
-    /// Serial queue for thread-safe access to mutable state.
-    private let queue = DispatchQueue(label: "com.redyne.navigationHistory")
-
-    /// The ordered list of navigation entries.
-    private(set) var entries: [NavigationEntry] = []
-
-    /// Points to the *current* position in `entries`.
-    /// A value of -1 means no history has been recorded yet.
-    private(set) var currentIndex: Int = -1
-
-    /// `true` when we are replaying an entry (back/forward) so that `push` is suppressed.
-    private var isReplaying = false
-
-    // MARK: - Public API
-
-    /// Whether there is at least one entry behind the current position.
     var canGoBack: Bool {
-        return queue.sync { currentIndex > 0 }
+        currentIndex > 0
     }
 
-    /// Whether there is at least one entry ahead of the current position.
     var canGoForward: Bool {
-        return queue.sync { currentIndex < entries.count - 1 }
+        currentIndex < entries.count - 1
     }
 
-    /// Records a new navigation entry.
+    /// Records a destination, discarding the forward branch after a new visit.
     func push(entry: NavigationEntry) {
-        queue.sync {
-            guard !isReplaying else { return }
+        guard replayDepth == 0 else { return }
+        if currentIndex >= 0, entries[currentIndex] == entry { return }
 
-            if currentIndex >= 0, currentIndex < entries.count, entries[currentIndex] == entry {
-                return
-            }
+        if currentIndex < entries.count - 1 {
+            entries.removeSubrange((currentIndex + 1)...)
+        }
+        entries.append(entry)
+        currentIndex = entries.count - 1
 
-            if currentIndex < entries.count - 1 {
-                entries.removeSubrange((currentIndex + 1)...)
-            }
-
-            entries.append(entry)
-            currentIndex = entries.count - 1
-
-            if entries.count > NavigationHistoryManager.maxDepth {
-                let overflow = entries.count - NavigationHistoryManager.maxDepth
-                entries.removeFirst(overflow)
-                currentIndex -= overflow
-            }
+        if entries.count > Self.maxDepth {
+            let overflow = entries.count - Self.maxDepth
+            entries.removeFirst(overflow)
+            currentIndex -= overflow
         }
     }
 
-    /// Moves one step back in the history and returns the entry to navigate to.
     func goBack() -> NavigationEntry? {
-        return queue.sync {
-            guard canGoBack else { return nil }
-            currentIndex -= 1
-            return entries[currentIndex]
-        }
+        guard canGoBack else { return nil }
+        currentIndex -= 1
+        return entries[currentIndex]
     }
 
-    /// Moves one step forward in the history and returns the entry to navigate to.
     func goForward() -> NavigationEntry? {
-        return queue.sync {
-            guard canGoForward else { return nil }
-            currentIndex += 1
-            return entries[currentIndex]
-        }
+        guard canGoForward else { return nil }
+        currentIndex += 1
+        return entries[currentIndex]
     }
 
-    /// Executes `body` while suppressing `push(entry:)` calls.
-    func performWithoutRecording(_ body: () -> Void) {
-        queue.sync {
-            isReplaying = true
-            body()
-            isReplaying = false
-        }
+    /// Runs UI navigation inline, suppressing recording until all nested replays
+    /// have returned. Deferred/asynchronous navigation is outside this scope.
+    func performWithoutRecording(_ body: @MainActor () -> Void) {
+        replayDepth += 1
+        defer { replayDepth -= 1 }
+        body()
     }
 
-    /// Removes all history entries and resets the cursor.
     func clear() {
-        queue.sync {
-            entries.removeAll()
-            currentIndex = -1
-        }
+        entries.removeAll()
+        currentIndex = -1
     }
 }
